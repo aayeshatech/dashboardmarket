@@ -196,10 +196,10 @@ def fetch_almanac_data(date):
         response = requests.get(url, headers=headers, timeout=15)
         
         # Debug information
-        st.write(f"**Debug Info:**")
-        st.write(f"URL: {url}")
-        st.write(f"Status Code: {response.status_code}")
-        
+        with st.expander("Debug Information"):
+            st.write(f"**URL:** {url}")
+            st.write(f"**Status Code:** {response.status_code}")
+            
         # Use regex to extract iframe src
         iframe_pattern = r'<iframe[^>]*id="almanacFrame"[^>]*src="([^"]*)"'
         match = re.search(iframe_pattern, response.text)
@@ -208,12 +208,14 @@ def fetch_almanac_data(date):
             raise ValueError("Could not find iframe in the HTML response")
             
         iframe_src = match.group(1)
-        st.write(f"Iframe SRC: {iframe_src}")
+        with st.expander("Debug Information"):
+            st.write(f"**Iframe SRC:** {iframe_src}")
         
         # Now get the second HTML page from the iframe src
         data_response = requests.get(iframe_src, headers=headers, timeout=15)
-        st.write(f"Data URL Status: {data_response.status_code}")
-        st.write(f"Data Response (first 200 chars): {data_response.text[:200]}")
+        with st.expander("Debug Information"):
+            st.write(f"**Data URL Status:** {data_response.status_code}")
+            st.write(f"**Data Response (first 200 chars):** {data_response.text[:200]}")
         
         # Check if response is empty
         if not data_response.text.strip():
@@ -229,12 +231,14 @@ def fetch_almanac_data(date):
                 raise ValueError("Could not find sandbox iframe in the HTML response")
                 
             sandbox_src = sandbox_match.group(1)
-            st.write(f"Sandbox SRC: {sandbox_src}")
+            with st.expander("Debug Information"):
+                st.write(f"**Sandbox SRC:** {sandbox_src}")
             
             # Now get the actual data from the sandbox iframe src
             final_response = requests.get(sandbox_src, headers=headers, timeout=15)
-            st.write(f"Final URL Status: {final_response.status_code}")
-            st.write(f"Final Response (first 200 chars): {final_response.text[:200]}")
+            with st.expander("Debug Information"):
+                st.write(f"**Final URL Status:** {final_response.status_code}")
+                st.write(f"**Final Response (first 200 chars):** {final_response.text[:200]}")
             
             # Check if response is empty
             if not final_response.text.strip():
@@ -245,7 +249,8 @@ def fetch_almanac_data(date):
                 data = json.loads(final_response.text)
             except json.JSONDecodeError as e:
                 st.error(f"JSON Decode Error: {str(e)}")
-                st.error(f"Raw Response: {final_response.text}")
+                with st.expander("Raw Response"):
+                    st.text(final_response.text)
                 raise
         else:
             # Try to parse JSON directly
@@ -253,7 +258,8 @@ def fetch_almanac_data(date):
                 data = json.loads(data_response.text)
             except json.JSONDecodeError as e:
                 st.error(f"JSON Decode Error: {str(e)}")
-                st.error(f"Raw Response: {data_response.text}")
+                with st.expander("Raw Response"):
+                    st.text(data_response.text)
                 raise
             
         return data
@@ -380,6 +386,9 @@ with col2:
 
 # Format date for API
 date_str = selected_date.strftime("%Y-%m-%d")
+
+# Display selected date
+st.markdown(f"### Selected Date: {selected_date.strftime('%d %B %Y')}")
 
 # Fetch and process data
 with st.spinner("Fetching astronomical data..."):
