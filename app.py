@@ -210,7 +210,7 @@ def fetch_almanac_data(date):
         iframe_src = match.group(1)
         st.write(f"Iframe SRC: {iframe_src}")
         
-        # Now get the actual data from the iframe src
+        # Now get the second HTML page from the iframe src
         data_response = requests.get(iframe_src, headers=headers, timeout=15)
         st.write(f"Data URL Status: {data_response.status_code}")
         st.write(f"Data Response (first 200 chars): {data_response.text[:200]}")
@@ -218,14 +218,43 @@ def fetch_almanac_data(date):
         # Check if response is empty
         if not data_response.text.strip():
             raise ValueError("Empty response from data URL")
+        
+        # Check if it's HTML (not JSON)
+        if data_response.text.strip().startswith('<'):
+            # Extract the sandboxFrame src
+            sandbox_pattern = r'<iframe[^>]*id="sandboxFrame"[^>]*src="([^"]*)"'
+            sandbox_match = re.search(sandbox_pattern, data_response.text)
             
-        # Try to parse JSON
-        try:
-            data = json.loads(data_response.text)
-        except json.JSONDecodeError as e:
-            st.error(f"JSON Decode Error: {str(e)}")
-            st.error(f"Raw Response: {data_response.text}")
-            raise
+            if not sandbox_match:
+                raise ValueError("Could not find sandbox iframe in the HTML response")
+                
+            sandbox_src = sandbox_match.group(1)
+            st.write(f"Sandbox SRC: {sandbox_src}")
+            
+            # Now get the actual data from the sandbox iframe src
+            final_response = requests.get(sandbox_src, headers=headers, timeout=15)
+            st.write(f"Final URL Status: {final_response.status_code}")
+            st.write(f"Final Response (first 200 chars): {final_response.text[:200]}")
+            
+            # Check if response is empty
+            if not final_response.text.strip():
+                raise ValueError("Empty response from final URL")
+                
+            # Try to parse JSON
+            try:
+                data = json.loads(final_response.text)
+            except json.JSONDecodeError as e:
+                st.error(f"JSON Decode Error: {str(e)}")
+                st.error(f"Raw Response: {final_response.text}")
+                raise
+        else:
+            # Try to parse JSON directly
+            try:
+                data = json.loads(data_response.text)
+            except json.JSONDecodeError as e:
+                st.error(f"JSON Decode Error: {str(e)}")
+                st.error(f"Raw Response: {data_response.text}")
+                raise
             
         return data
     except Exception as e:
