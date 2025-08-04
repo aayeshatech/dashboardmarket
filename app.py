@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz
+import json
 
 # === CONFIGURATION ===
 BOT_TOKEN = '7613703350:AAE-W4dJ37lngM4lO2Tnuns8-a-80jYRtxk'
@@ -10,20 +11,222 @@ CHAT_ID = '-1002840229810'
 REMARK = "Aayeshatech Astro Trend"
 WEBHOOK_URL = "https://tradingview-webhook-0h3k.onrender.com"
 
+# === EXAMPLE DATA (FALLBACK) ===
+EXAMPLE_DATA = [
+    {
+        "Planet": "Su",
+        "Date": "2025-08-05",
+        "Time": "01:14:15",
+        "Motion": "D",
+        "Sign Lord": "Mo",
+        "Star Lord": "Me",
+        "Sub Lord": "Ke",
+        "Zodiac": "Cancer",
+        "Nakshatra": "Ashlesha",
+        "Pada": 1,
+        "Pos in Zodiac": "18°33'20\"",
+        "Declination": 17.00
+    },
+    {
+        "Planet": "Mo",
+        "Date": "2025-08-05",
+        "Time": "03:37:39",
+        "Motion": "D",
+        "Sign Lord": "Ma",
+        "Star Lord": "Me",
+        "Sub Lord": "Ju",
+        "Zodiac": "Scorpio",
+        "Nakshatra": "Jyeshtha",
+        "Pada": 3,
+        "Pos in Zodiac": "26°06'40\"",
+        "Declination": -28.24
+    },
+    {
+        "Planet": "Me",
+        "Date": "2025-08-05",
+        "Time": "06:57:46",
+        "Motion": "R",
+        "Sign Lord": "Mo",
+        "Star Lord": "Sa",
+        "Sub Lord": "Mo",
+        "Zodiac": "Cancer",
+        "Nakshatra": "Pushya",
+        "Pada": 3,
+        "Pos in Zodiac": "12°06'39\"",
+        "Declination": 14.32
+    },
+    {
+        "Planet": "Mo",
+        "Date": "2025-08-05",
+        "Time": "07:05:56",
+        "Motion": "D",
+        "Sign Lord": "Ma",
+        "Star Lord": "Me",
+        "Sub Lord": "Sa",
+        "Zodiac": "Scorpio",
+        "Nakshatra": "Jyeshtha",
+        "Pada": 4,
+        "Pos in Zodiac": "27°53'20\"",
+        "Declination": -28.36
+    },
+    {
+        "Planet": "Mo",
+        "Date": "2025-08-05",
+        "Time": "11:12:29",
+        "Motion": "D",
+        "Sign Lord": "Ju",
+        "Star Lord": "Ke",
+        "Sub Lord": "Ke",
+        "Zodiac": "Saggitarius",
+        "Nakshatra": "Mula",
+        "Pada": 1,
+        "Pos in Zodiac": "00°00'00\"",
+        "Declination": -28.46
+    },
+    {
+        "Planet": "Mo",
+        "Date": "2025-08-05",
+        "Time": "12:43:07",
+        "Motion": "D",
+        "Sign Lord": "Ju",
+        "Star Lord": "Ke",
+        "Sub Lord": "Ve",
+        "Zodiac": "Saggitarius",
+        "Nakshatra": "Mula",
+        "Pada": 1,
+        "Pos in Zodiac": "00°46'40\"",
+        "Declination": -28.49
+    },
+    {
+        "Planet": "Mo",
+        "Date": "2025-08-05",
+        "Time": "17:01:25",
+        "Motion": "D",
+        "Sign Lord": "Ju",
+        "Star Lord": "Ke",
+        "Sub Lord": "Su",
+        "Zodiac": "Saggitarius",
+        "Nakshatra": "Mula",
+        "Pada": 1,
+        "Pos in Zodiac": "03°00'00\"",
+        "Declination": -28.53
+    },
+    {
+        "Planet": "Mo",
+        "Date": "2025-08-05",
+        "Time": "18:18:43",
+        "Motion": "D",
+        "Sign Lord": "Ju",
+        "Star Lord": "Ke",
+        "Sub Lord": "Mo",
+        "Zodiac": "Saggitarius",
+        "Nakshatra": "Mula",
+        "Pada": 2,
+        "Pos in Zodiac": "03°40'00\"",
+        "Declination": -28.53
+    },
+    {
+        "Planet": "Mo",
+        "Date": "2025-08-05",
+        "Time": "20:27:22",
+        "Motion": "D",
+        "Sign Lord": "Ju",
+        "Star Lord": "Ke",
+        "Sub Lord": "Ma",
+        "Zodiac": "Saggitarius",
+        "Nakshatra": "Mula",
+        "Pada": 2,
+        "Pos in Zodiac": "04°46'40\"",
+        "Declination": -28.53
+    },
+    {
+        "Planet": "Su",
+        "Date": "2025-08-05",
+        "Time": "20:44:01",
+        "Motion": "D",
+        "Sign Lord": "Mo",
+        "Star Lord": "Me",
+        "Sub Lord": "Ve",
+        "Zodiac": "Cancer",
+        "Nakshatra": "Ashlesha",
+        "Pada": 1,
+        "Pos in Zodiac": "19°20'00\"",
+        "Declination": 16.78
+    },
+    {
+        "Planet": "Mo",
+        "Date": "2025-08-05",
+        "Time": "21:57:16",
+        "Motion": "D",
+        "Sign Lord": "Ju",
+        "Star Lord": "Ke",
+        "Sub Lord": "Ra",
+        "Zodiac": "Saggitarius",
+        "Nakshatra": "Mula",
+        "Pada": 2,
+        "Pos in Zodiac": "05°33'20\"",
+        "Declination": -28.52
+    },
+    {
+        "Planet": "Ma",
+        "Date": "2025-08-05",
+        "Time": "23:24:29",
+        "Motion": "D",
+        "Sign Lord": "Me",
+        "Star Lord": "Su",
+        "Sub Lord": "Me",
+        "Zodiac": "Virgo",
+        "Nakshatra": "Uttaraphalguni",
+        "Pada": 3,
+        "Pos in Zodiac": "05°06'40\"",
+        "Declination": 0.82
+    }
+]
+
 # === DATA FETCHING ===
 @st.cache_data(ttl=3600)
 def fetch_almanac_data(date):
     try:
         url = f"https://data.astronomics.ai/almanac/?date={date}"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        
+        # Debug information
+        st.write(f"**Debug Info:**")
+        st.write(f"URL: {url}")
+        st.write(f"Status Code: {response.status_code}")
+        st.write(f"Response Headers: {response.headers}")
+        st.write(f"Response Content (first 200 chars): {response.text[:200]}")
+        
+        # Check if response is empty
+        if not response.text.strip():
+            raise ValueError("Empty response from API")
+            
+        # Try to parse JSON
+        try:
+            data = response.json()
+        except json.JSONDecodeError as e:
+            st.error(f"JSON Decode Error: {str(e)}")
+            st.error(f"Raw Response: {response.text}")
+            raise
+            
+        return data
     except Exception as e:
         st.error(f"Data fetch failed: {str(e)}")
+        
+        # Fallback to example data if available
+        if date == "2025-08-05":
+            st.warning("Using example data for 2025-08-05")
+            return EXAMPLE_DATA
         return None
 
 # === SENTIMENT ANALYSIS ===
 def analyze_sentiment(data):
+    if not data:
+        return [], pd.DataFrame()
+        
     df = pd.DataFrame(data)
     df['Time'] = pd.to_datetime(df['Time']).dt.time
     
@@ -53,14 +256,24 @@ def analyze_sentiment(data):
         prev_time = event['Time']
     
     # Add final segment
-    segments.append({
-        'start': prev_time,
-        'end': end,
-        'sign_lord': moon_events.iloc[-1]['Sign Lord'],
-        'star_lord': moon_events.iloc[-1]['Star Lord'],
-        'sub_lord': moon_events.iloc[-1]['Sub Lord'],
-        'zodiac': moon_events.iloc[-1]['Zodiac']
-    })
+    if moon_events.empty:
+        segments.append({
+            'start': start,
+            'end': end,
+            'sign_lord': 'Unknown',
+            'star_lord': 'Unknown',
+            'sub_lord': 'Unknown',
+            'zodiac': 'Unknown'
+        })
+    else:
+        segments.append({
+            'start': prev_time,
+            'end': end,
+            'sign_lord': moon_events.iloc[-1]['Sign Lord'],
+            'star_lord': moon_events.iloc[-1]['Star Lord'],
+            'sub_lord': moon_events.iloc[-1]['Sub Lord'],
+            'zodiac': moon_events.iloc[-1]['Zodiac']
+        })
     
     return segments, retrogrades
 
@@ -99,7 +312,9 @@ def send_telegram_notification(message):
             'text': f"{REMARK}\n\n{message}",
             'parse_mode': 'HTML'
         }
-        requests.post(url, json=payload)
+        response = requests.post(url, json=payload)
+        if response.status_code != 200:
+            st.error(f"Telegram notification failed: {response.text}")
     except Exception as e:
         st.error(f"Telegram notification failed: {str(e)}")
 
@@ -107,19 +322,24 @@ def send_telegram_notification(message):
 st.set_page_config(page_title="Astro Market Dashboard", layout="wide")
 st.title("🌌 Daily Astro Market Dashboard")
 
-# Date selector
+# Date selector with validation
 col1, col2 = st.columns([2, 1])
 with col1:
     selected_date = st.date_input(
         "Select Date",
         datetime.now(pytz.timezone('Asia/Kolkata')).date(),
-        max_value=datetime.now(pytz.timezone('Asia/Kolkata')).date() + timedelta(days=7)
+        min_value=datetime.now(pytz.timezone('Asia/Kolkata')).date() - timedelta(days=30),
+        max_value=datetime.now(pytz.timezone('Asia/Kolkata')).date() + timedelta(days=30)
     )
 with col2:
     notify = st.checkbox("Send Telegram Notification")
 
+# Format date for API
+date_str = selected_date.strftime("%Y-%m-%d")
+
 # Fetch and process data
-data = fetch_almanac_data(selected_date.strftime("%Y-%m-%d"))
+with st.spinner("Fetching astronomical data..."):
+    data = fetch_almanac_data(date_str)
 
 if data:
     segments, retrogrades = analyze_sentiment(data)
@@ -231,7 +451,12 @@ if data:
         st.warning("Tomorrow's data unavailable")
 
 else:
-    st.error("Failed to load data. Please check your connection or try another date.")
+    st.error("Failed to load data. Please try another date or check the debug information above.")
+    
+    # Show example data if available
+    if date_str == "2025-08-05":
+        st.info("Showing example data for 2025-08-05")
+        st.dataframe(pd.DataFrame(EXAMPLE_DATA), use_container_width=True)
 
 # === FOOTER ===
 st.markdown("---")
