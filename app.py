@@ -359,29 +359,69 @@ with st.expander("Daily Data Upload"):
             if uploaded_file.name.endswith('.csv'):
                 # Read CSV file
                 string_data = uploaded_file.read().decode("utf-8")
-                df = pd.read_csv(io.StringIO(string_data))
                 
-                # Convert DataFrame to list of dictionaries
-                manual_data = df.to_dict('records')
-                st.success("CSV data uploaded successfully!")
-                data = manual_data
+                # Show raw data for debugging
+                with st.expander("Raw CSV Data"):
+                    st.text(string_data[:1000])
                 
-                # Show preview of uploaded data
-                st.subheader("Uploaded Data Preview")
-                st.dataframe(df.head(10))
+                # Try reading with different parameters
+                try:
+                    # First try with default settings
+                    df = pd.read_csv(io.StringIO(string_data))
+                except:
+                    try:
+                        # Try with different separator
+                        df = pd.read_csv(io.StringIO(string_data), sep=';')
+                    except:
+                        try:
+                            # Try with tab separator
+                            df = pd.read_csv(io.StringIO(string_data), sep='\t')
+                        except Exception as e:
+                            st.error(f"Error reading CSV: {str(e)}")
+                            st.info("Please make sure your CSV file has the correct format.")
+                            data = None
+                            raise
                 
+                # Check if required columns exist
+                required_columns = ['Planet', 'Date', 'Time', 'Motion', 'Sign Lord', 'Star Lord', 
+                                  'Sub Lord', 'Zodiac', 'Nakshatra', 'Pada', 'Pos in Zodiac', 'Declination']
+                
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                if missing_columns:
+                    st.error(f"Missing required columns: {', '.join(missing_columns)}")
+                    st.info("Please make sure your CSV file has all required columns.")
+                    data = None
+                else:
+                    # Convert DataFrame to list of dictionaries
+                    manual_data = df.to_dict('records')
+                    st.success("CSV data uploaded successfully!")
+                    data = manual_data
+                    
+                    # Show preview of uploaded data
+                    st.subheader("Uploaded Data Preview")
+                    st.dataframe(df)
+            
             # Process JSON file
             elif uploaded_file.name.endswith('.json'):
                 # Read JSON file
                 string_data = uploaded_file.read().decode("utf-8")
-                manual_data = json.loads(string_data)
-                st.success("JSON data uploaded successfully!")
-                data = manual_data
                 
-                # Show preview of uploaded data
-                st.subheader("Uploaded Data Preview")
-                st.dataframe(pd.DataFrame(manual_data).head(10))
+                # Show raw data for debugging
+                with st.expander("Raw JSON Data"):
+                    st.text(string_data[:1000])
                 
+                try:
+                    manual_data = json.loads(string_data)
+                    st.success("JSON data uploaded successfully!")
+                    data = manual_data
+                    
+                    # Show preview of uploaded data
+                    st.subheader("Uploaded Data Preview")
+                    st.dataframe(pd.DataFrame(manual_data))
+                except json.JSONDecodeError as e:
+                    st.error(f"Invalid JSON format: {str(e)}")
+                    data = None
+                    
         except Exception as e:
             st.error(f"Error processing uploaded file: {str(e)}")
             data = None
@@ -531,6 +571,27 @@ else:
         file_name="example_astro_data.json",
         mime="application/json"
     )
+    
+    # Instructions for CSV format
+    st.subheader("CSV Format Instructions")
+    st.markdown("""
+    Your CSV file should have these columns in this exact order:
+    
+    1. Planet (Su, Mo, Me, Ma, Ju, Ve, Sa, Ra, Ke)
+    2. Date (YYYY-MM-DD)
+    3. Time (HH:MM:SS)
+    4. Motion (D for Direct, R for Retrograde)
+    5. Sign Lord (Mo, Ma, Me, Ju, Ve, Sa)
+    6. Star Lord (Mo, Ma, Me, Ju, Ve, Sa)
+    7. Sub Lord (Mo, Ma, Me, Ju, Ve, Sa)
+    8. Zodiac (Aries, Taurus, etc.)
+    9. Nakshatra (Ashwini, Bharani, etc.)
+    10. Pada (1, 2, 3, or 4)
+    11. Pos in Zodiac (degrees°minutes'seconds")
+    12. Declination (decimal number)
+    
+    Make sure there are no extra spaces or special characters in the column names.
+    """)
 
 # === FOOTER ===
 st.markdown("---")
