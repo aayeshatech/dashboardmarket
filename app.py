@@ -688,6 +688,89 @@ def generate_index_sector_report(segments, indices, bullish_sectors, bearish_sec
     
     return report
 
+def generate_summary_report(data, assets, indices, bullish_sectors, bearish_sectors, date_str):
+    """Generate a summary report with best times for long/short positions"""
+    summary_data = []
+    
+    # Add indices
+    for index, sentiment in indices.items():
+        timing = get_index_intraday_timing(data, index)
+        
+        # Find best long/short times
+        best_long_time = "N/A"
+        best_short_time = "N/A"
+        
+        for segment in timing:
+            if segment['sentiment'] == 'Bullish' and best_long_time == "N/A":
+                best_long_time = f"{segment['start']} - {segment['end']}"
+            elif segment['sentiment'] == 'Bearish' and best_short_time == "N/A":
+                best_short_time = f"{segment['start']} - {segment['end']}"
+        
+        summary_data.append({
+            'Asset': index,
+            'Type': 'Index',
+            'Sentiment': sentiment,
+            'Best Long Time': best_long_time,
+            'Best Short Time': best_short_time
+        })
+    
+    # Add assets
+    for asset, sentiment in assets.items():
+        timing = get_asset_intraday_timing(data, asset)
+        
+        # Find best long/short times
+        best_long_time = "N/A"
+        best_short_time = "N/A"
+        
+        for segment in timing:
+            if segment['sentiment'] == 'Bullish' and best_long_time == "N/A":
+                best_long_time = f"{segment['start']} - {segment['end']}"
+            elif segment['sentiment'] == 'Bearish' and best_short_time == "N/A":
+                best_short_time = f"{segment['start']} - {segment['end']}"
+        
+        summary_data.append({
+            'Asset': asset,
+            'Type': 'Asset',
+            'Sentiment': sentiment,
+            'Best Long Time': best_long_time,
+            'Best Short Time': best_short_time
+        })
+    
+    # Add sectors
+    for sector in SECTOR_STOCKS.keys():
+        timing = get_sector_intraday_timing(data, sector)
+        
+        # Determine overall sentiment
+        bullish_count = sum(1 for segment in timing if segment['sentiment'] == 'Bullish')
+        bearish_count = sum(1 for segment in timing if segment['sentiment'] == 'Bearish')
+        
+        if bullish_count > bearish_count:
+            sentiment = 'Bullish'
+        elif bearish_count > bullish_count:
+            sentiment = 'Bearish'
+        else:
+            sentiment = 'Neutral'
+        
+        # Find best long/short times
+        best_long_time = "N/A"
+        best_short_time = "N/A"
+        
+        for segment in timing:
+            if segment['sentiment'] == 'Bullish' and best_long_time == "N/A":
+                best_long_time = f"{segment['start']} - {segment['end']}"
+            elif segment['sentiment'] == 'Bearish' and best_short_time == "N/A":
+                best_short_time = f"{segment['start']} - {segment['end']}"
+        
+        summary_data.append({
+            'Asset': sector,
+            'Type': 'Sector',
+            'Sentiment': sentiment,
+            'Best Long Time': best_long_time,
+            'Best Short Time': best_short_time
+        })
+    
+    return pd.DataFrame(summary_data)
+
 # === TELEGRAM NOTIFICATION ===
 def send_telegram_notification(message):
     try:
@@ -898,7 +981,7 @@ if data:
     bullish_sectors, bearish_sectors = map_sectors(segments)
     
     # Create main tabs
-    tab1, tab2 = st.tabs(["Intraday Today Market", "Sectorwise Bullish/Bearish"])
+    tab1, tab2, tab3 = st.tabs(["Intraday Today Market", "Sectorwise Bullish/Bearish", "Summary Report"])
     
     # Tab 1: Intraday Today Market
     with tab1:
@@ -1187,6 +1270,81 @@ if data:
             else:
                 st.info("No timing data available for OIL AND GAS sector")
     
+    # Tab 3: Summary Report
+    with tab3:
+        st.subheader(f"Summary Report for {selected_date.strftime('%d %B %Y')}")
+        
+        # Generate summary report
+        summary_df = generate_summary_report(data, assets, indices, bullish_sectors, bearish_sectors, selected_date.strftime('%Y-%m-%d'))
+        
+        # Apply color coding to sentiment column
+        def highlight_sentiment(val):
+            color = 'blue' if val == 'Bullish' else 'red' if val == 'Bearish' else 'black'
+            return f'color: {color}'
+        
+        # Apply style to the dataframe
+        styled_df = summary_df.style.applymap(highlight_sentiment, subset=['Sentiment'])
+        
+        # Display the styled dataframe
+        st.dataframe(styled_df, use_container_width=True)
+        
+        # Additional summary information
+        st.subheader("Key Astrological Aspects")
+        
+        # Get overall market sentiment
+        if segments:
+            market_sentiment = "🐂 Bullish" if segments[0]['sub_lord'] in ['Ve', 'Ju'] else "🐻 Bearish"
+            market_time = f"{segments[0]['start'].strftime('%H:%M')} - {segments[0]['end'].strftime('%H:%M')}"
+            st.markdown(f"**Market Sentiment:** {market_sentiment} ({market_time})")
+        
+        # Top bullish and bearish assets/sectors
+        st.markdown("**Top Bullish:**")
+        bullish_items = []
+        
+        # Add bullish indices
+        for index, sentiment in indices.items():
+            if sentiment == 'Bullish':
+                bullish_items.append(index)
+        
+        # Add bullish assets
+        for asset, sentiment in assets.items():
+            if sentiment == 'Bullish':
+                bullish_items.append(asset)
+        
+        # Add bullish sectors
+        for sector in bullish_sectors.keys():
+            bullish_items.append(sector)
+        
+        if bullish_items:
+            st.markdown(", ".join(bullish_items[:5]))  # Show top 5
+        else:
+            st.markdown("None")
+        
+        st.markdown("**Top Bearish:**")
+        bearish_items = []
+        
+        # Add bearish indices
+        for index, sentiment in indices.items():
+            if sentiment == 'Bearish':
+                bearish_items.append(index)
+        
+        # Add bearish assets
+        for asset, sentiment in assets.items():
+            if sentiment == 'Bearish':
+                bearish_items.append(asset)
+        
+        # Add bearish sectors
+        for sector in bearish_sectors.keys():
+            bearish_items.append(sector)
+        
+        if bearish_items:
+            st.markdown(", ".join(bearish_items[:5]))  # Show top 5
+        else:
+            st.markdown("None")
+        
+        # Key events
+        st.markdown(f"**Key Events:** {f'{len(retrogrades)} retrogrades' if not retrogrades.empty else 'None'}")
+    
     # Telegram Notification
     if notify and st.button("Send Report to Telegram"):
         # Generate asset report
@@ -1201,8 +1359,15 @@ if data:
         # Generate index and sector report
         index_sector_report = generate_index_sector_report(segments, indices, bullish_sectors, bearish_sectors, retrogrades, selected_date.strftime('%d %b %Y'))
         
-        # Combine both reports
-        combined_message = asset_report_str + "\n\n" + index_sector_report
+        # Generate summary report for Telegram
+        summary_df = generate_summary_report(data, assets, indices, bullish_sectors, bearish_sectors, selected_date.strftime('%Y-%m-%d'))
+        summary_str = "\n\n<b>SUMMARY REPORT</b>\n"
+        summary_str += "<pre>"
+        summary_str += summary_df.to_string(index=False)
+        summary_str += "</pre>"
+        
+        # Combine all reports
+        combined_message = asset_report_str + "\n\n" + index_sector_report + summary_str
         
         # Send to Telegram
         send_telegram_notification(combined_message)
