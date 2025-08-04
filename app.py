@@ -181,6 +181,18 @@ EXAMPLE_DATA = [
         "Declination": 0.82
     }
 ]
+
+# === SECTOR STOCK MAPPING ===
+SECTOR_STOCKS = {
+    'PSUBANK': ['SBI', 'PNB', 'BANKBARODA', 'CANBK', 'UNIONBANK'],
+    'POWER': ['NTPC', 'POWERGRID', 'TATAPOWER', 'ADANITRANS', 'JSWENERGY'],
+    'METAL': ['TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'COALINDIA'],
+    'FMCG': ['HINDUNILVR', 'ITC', 'NESTLEIND', 'BRITANNIA', 'DABUR'],
+    'AUTO': ['MARUTI', 'TATAMOTORS', 'BAJAJ-AUTO', 'M&M', 'EICHERMOT'],
+    'PHARMA': ['SUNPHARMA', 'DRREDDY', 'CIPLA', 'LUPIN', 'AUROPHARMA'],
+    'OIL AND GAS': ['ONGC', 'RELIANCE', 'GAIL', 'BPCL', 'IOC']
+}
+
 # === DATA FETCHING ===
 @st.cache_data(ttl=3600)
 def fetch_almanac_data(date):
@@ -217,6 +229,7 @@ def fetch_almanac_data(date):
             st.warning("Using example data for 2025-08-05")
             return EXAMPLE_DATA
         return None
+
 # === SENTIMENT ANALYSIS ===
 def analyze_sentiment(data):
     if not data:
@@ -337,17 +350,17 @@ def analyze_sentiment(data):
             indices['BANKNIFTY'] = 'Bearish'
     
     return segments, retrogrades, assets, indices
+
 # === SECTOR MAPPING ===
 def map_sectors(segments):
     sector_map = {
-        'Banking': ['Ju', 'Ve'],
-        'IT': ['Me'],
-        'Pharma': ['Ke'],
-        'Energy': ['Ma', 'Sa'],
-        'Auto': ['Ve'],
-        'Real Estate': ['Ma', 'Sa'],
-        'Consumer': ['Ve'],
-        'Metals': ['Ma', 'Sa']
+        'PSUBANK': ['Ju', 'Ve'],
+        'POWER': ['Ma', 'Sa'],
+        'METAL': ['Ma', 'Sa'],
+        'FMCG': ['Ve'],
+        'AUTO': ['Ve'],
+        'PHARMA': ['Ke'],
+        'OIL AND GAS': ['Ma', 'Sa']
     }
     
     bullish_sectors = {}
@@ -362,6 +375,7 @@ def map_sectors(segments):
                     bearish_sectors[sector] = bearish_sectors.get(sector, 0) + 1
     
     return bullish_sectors, bearish_sectors
+
 # === INTRADAY TIMING FUNCTIONS ===
 def get_asset_intraday_timing(data, asset, start_time="05:00", end_time="23:55"):
     """Generate intraday timing for assets (5AM to 11:55PM)"""
@@ -457,6 +471,53 @@ def get_index_intraday_timing(data, index, start_time="09:15", end_time="15:30")
     
     return segments
 
+def get_sector_intraday_timing(data, sector, start_time="09:15", end_time="15:30"):
+    """Generate intraday timing for sectors (9:15AM to 3:30PM)"""
+    if not data:
+        return []
+    
+    df = pd.DataFrame(data)
+    df['Time'] = pd.to_datetime(df['Time']).dt.time
+    
+    # Filter for market hours
+    start = pd.to_datetime(start_time).time()
+    end = pd.to_datetime(end_time).time()
+    market_data = df[df['Time'].between(start, end)]
+    
+    # Get moon events for segmentation
+    moon_events = market_data[market_data['Planet'] == 'Mo'].sort_values('Time')
+    
+    # Create segments
+    segments = []
+    prev_time = start
+    
+    for _, event in moon_events.iterrows():
+        segments.append({
+            'start': prev_time.strftime('%H:%M'),
+            'end': event['Time'].strftime('%H:%M'),
+            'sentiment': get_sector_sentiment(event, sector),
+            'trigger': f"Moon in {event['Zodiac']}"
+        })
+        prev_time = event['Time']
+    
+    # Add final segment
+    if moon_events.empty:
+        segments.append({
+            'start': start.strftime('%H:%M'),
+            'end': end.strftime('%H:%M'),
+            'sentiment': 'Neutral',
+            'trigger': 'No Moon events'
+        })
+    else:
+        segments.append({
+            'start': prev_time.strftime('%H:%M'),
+            'end': end.strftime('%H:%M'),
+            'sentiment': get_sector_sentiment(moon_events.iloc[-1], sector),
+            'trigger': f"Moon in {moon_events.iloc[-1]['Zodiac']}"
+        })
+    
+    return segments
+
 def get_asset_sentiment(row, asset):
     """Determine sentiment for an asset based on planetary position"""
     planet = row['Planet']
@@ -532,6 +593,33 @@ def get_index_sentiment(row, index):
     
     return 'Neutral'
 
+def get_sector_sentiment(row, sector):
+    """Determine sentiment for a sector based on planetary position"""
+    sign_lord = row['Sign Lord']
+    star_lord = row['Star Lord']
+    sub_lord = row['Sub Lord']
+    
+    # Sector to planet mapping
+    sector_map = {
+        'PSUBANK': ['Ju', 'Ve'],
+        'POWER': ['Ma', 'Sa'],
+        'METAL': ['Ma', 'Sa'],
+        'FMCG': ['Ve'],
+        'AUTO': ['Ve'],
+        'PHARMA': ['Ke'],
+        'OIL AND GAS': ['Ma', 'Sa']
+    }
+    
+    # Check if any of the lords are in the sector's planet list
+    if sector in sector_map:
+        if any(lord in sector_map[sector] for lord in [sign_lord, star_lord, sub_lord]):
+            if sub_lord in ['Ve', 'Ju']:
+                return 'Bullish'
+            elif sub_lord in ['Sa', 'Ma', 'Ke']:
+                return 'Bearish'
+    
+    return 'Neutral'
+
 def generate_asset_report(data, date):
     """Generate asset report in table format"""
     assets = ['GOLD', 'BTC', 'SILVER', 'CRUDE', 'DOWJONES']
@@ -599,6 +687,7 @@ def generate_index_sector_report(segments, indices, bullish_sectors, bearish_sec
     report += f"\n\n<b>Key Events:</b> {f"{len(retrogrades)} retrogrades" if not retrogrades.empty else "None"}"
     
     return report
+
 # === TELEGRAM NOTIFICATION ===
 def send_telegram_notification(message):
     try:
@@ -613,6 +702,7 @@ def send_telegram_notification(message):
             st.error(f"Telegram notification failed: {response.text}")
     except Exception as e:
         st.error(f"Telegram notification failed: {str(e)}")
+
 # === STREAMLIT DASHBOARD ===
 st.set_page_config(page_title="Astro Market Dashboard", layout="wide")
 st.title("🌌 Daily Astro Market Dashboard")
@@ -807,147 +897,295 @@ if data:
     segments, retrogrades, assets, indices = analyze_sentiment(data)
     bullish_sectors, bearish_sectors = map_sectors(segments)
     
-    # Market Sentiment Timeline
-    st.subheader("📊 Market Sentiment Timeline")
-    timeline_data = []
-    for seg in segments:
-        sentiment = "🐂 Bullish" if seg['sub_lord'] in ['Ve', 'Ju'] else "🐻 Bearish"
-        timeline_data.append({
-            "Time Period": f"{seg['start'].strftime('%H:%M')} - {seg['end'].strftime('%H:%M')}",
-            "Sentiment": sentiment,
-            "Sign Lord": seg['sign_lord'],
-            "Star Lord": seg['star_lord'],
-            "Sub Lord": seg['sub_lord'],
-            "Zodiac": seg['zodiac']
-        })
+    # Create main tabs
+    tab1, tab2 = st.tabs(["Intraday Today Market", "Sectorwise Bullish/Bearish"])
     
-    st.dataframe(pd.DataFrame(timeline_data), use_container_width=True)
-    
-    # Asset Intraday Timing (5AM to 11:55PM)
-    st.subheader("🌐 Asset Intraday Timing (5AM - 11:55PM)")
-    
-    # Create tabs for each asset
-    asset_tabs = st.tabs(["GOLD", "SILVER", "BTC", "DOWJONES", "CRUDE"])
-    
-    assets_list = ["GOLD", "SILVER", "BTC", "DOWJONES", "CRUDE"]
-    
-    for i, asset in enumerate(assets_list):
-        with asset_tabs[i]:
-            asset_timing = get_asset_intraday_timing(data, asset)
-            
-            if asset_timing:
-                # Create a DataFrame for better display
-                timing_df = pd.DataFrame(asset_timing)
-                
-                # Add sentiment emoji
-                timing_df['Sentiment'] = timing_df['sentiment'].apply(
-                    lambda x: "🐂 Bullish" if x == "Bullish" else "🐻 Bearish" if x == "Bearish" else "➖ Neutral"
-                )
-                
-                # Display the timing table
-                st.dataframe(timing_df[['start', 'end', 'Sentiment', 'trigger']], 
+    # Tab 1: Intraday Today Market
+    with tab1:
+        st.subheader("Intraday Market Timing")
+        
+        # Create subtabs for each asset
+        asset_tabs = st.tabs(["NIFTY", "BANKNIFTY", "GOLD", "SILVER", "CRUDE", "BTC", "DOWJONES"])
+        
+        # NIFTY Tab
+        with asset_tabs[0]:
+            nifty_timing = get_index_intraday_timing(data, "NIFTY")
+            if nifty_timing:
+                timing_df = pd.DataFrame(nifty_timing)
+                timing_df['Bullish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bullish" else "No")
+                timing_df['Bearish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bearish" else "No")
+                st.dataframe(timing_df[['start', 'end', 'trigger', 'Bullish', 'Bearish']], 
                             use_container_width=True,
                             column_config={
                                 "start": "Start Time",
                                 "end": "End Time",
-                                "Sentiment": "Sentiment",
-                                "trigger": "Planetary Trigger"
+                                "trigger": "Planetary Transit",
+                                "Bullish": "Bullish",
+                                "Bearish": "Bearish"
                             })
             else:
-                st.info(f"No timing data available for {asset}")
-    
-    # Index Intraday Timing (9:15AM to 3:30PM)
-    st.subheader("📈 Index Intraday Timing (9:15AM - 3:30PM)")
-    
-    # Create tabs for each index
-    index_tabs = st.tabs(["NIFTY", "BANKNIFTY"])
-    
-    indices_list = ["NIFTY", "BANKNIFTY"]
-    
-    for i, index in enumerate(indices_list):
-        with index_tabs[i]:
-            index_timing = get_index_intraday_timing(data, index)
-            
-            if index_timing:
-                # Create a DataFrame for better display
-                timing_df = pd.DataFrame(index_timing)
-                
-                # Add sentiment emoji
-                timing_df['Sentiment'] = timing_df['sentiment'].apply(
-                    lambda x: "🐂 Bullish" if x == "Bullish" else "🐻 Bearish" if x == "Bearish" else "➖ Neutral"
-                )
-                
-                # Display the timing table
-                st.dataframe(timing_df[['start', 'end', 'Sentiment', 'trigger']], 
+                st.info("No timing data available for NIFTY")
+        
+        # BANKNIFTY Tab
+        with asset_tabs[1]:
+            banknifty_timing = get_index_intraday_timing(data, "BANKNIFTY")
+            if banknifty_timing:
+                timing_df = pd.DataFrame(banknifty_timing)
+                timing_df['Bullish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bullish" else "No")
+                timing_df['Bearish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bearish" else "No")
+                st.dataframe(timing_df[['start', 'end', 'trigger', 'Bullish', 'Bearish']], 
                             use_container_width=True,
                             column_config={
                                 "start": "Start Time",
                                 "end": "End Time",
-                                "Sentiment": "Sentiment",
-                                "trigger": "Planetary Trigger"
+                                "trigger": "Planetary Transit",
+                                "Bullish": "Bullish",
+                                "Bearish": "Bearish"
                             })
             else:
-                st.info(f"No timing data available for {index}")
+                st.info("No timing data available for BANKNIFTY")
+        
+        # GOLD Tab
+        with asset_tabs[2]:
+            gold_timing = get_asset_intraday_timing(data, "GOLD")
+            if gold_timing:
+                timing_df = pd.DataFrame(gold_timing)
+                timing_df['Bullish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bullish" else "No")
+                timing_df['Bearish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bearish" else "No")
+                st.dataframe(timing_df[['start', 'end', 'trigger', 'Bullish', 'Bearish']], 
+                            use_container_width=True,
+                            column_config={
+                                "start": "Start Time",
+                                "end": "End Time",
+                                "trigger": "Planetary Transit",
+                                "Bullish": "Bullish",
+                                "Bearish": "Bearish"
+                            })
+            else:
+                st.info("No timing data available for GOLD")
+        
+        # SILVER Tab
+        with asset_tabs[3]:
+            silver_timing = get_asset_intraday_timing(data, "SILVER")
+            if silver_timing:
+                timing_df = pd.DataFrame(silver_timing)
+                timing_df['Bullish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bullish" else "No")
+                timing_df['Bearish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bearish" else "No")
+                st.dataframe(timing_df[['start', 'end', 'trigger', 'Bullish', 'Bearish']], 
+                            use_container_width=True,
+                            column_config={
+                                "start": "Start Time",
+                                "end": "End Time",
+                                "trigger": "Planetary Transit",
+                                "Bullish": "Bullish",
+                                "Bearish": "Bearish"
+                            })
+            else:
+                st.info("No timing data available for SILVER")
+        
+        # CRUDE Tab
+        with asset_tabs[4]:
+            crude_timing = get_asset_intraday_timing(data, "CRUDE")
+            if crude_timing:
+                timing_df = pd.DataFrame(crude_timing)
+                timing_df['Bullish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bullish" else "No")
+                timing_df['Bearish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bearish" else "No")
+                st.dataframe(timing_df[['start', 'end', 'trigger', 'Bullish', 'Bearish']], 
+                            use_container_width=True,
+                            column_config={
+                                "start": "Start Time",
+                                "end": "End Time",
+                                "trigger": "Planetary Transit",
+                                "Bullish": "Bullish",
+                                "Bearish": "Bearish"
+                            })
+            else:
+                st.info("No timing data available for CRUDE")
+        
+        # BTC Tab
+        with asset_tabs[5]:
+            btc_timing = get_asset_intraday_timing(data, "BTC")
+            if btc_timing:
+                timing_df = pd.DataFrame(btc_timing)
+                timing_df['Bullish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bullish" else "No")
+                timing_df['Bearish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bearish" else "No")
+                st.dataframe(timing_df[['start', 'end', 'trigger', 'Bullish', 'Bearish']], 
+                            use_container_width=True,
+                            column_config={
+                                "start": "Start Time",
+                                "end": "End Time",
+                                "trigger": "Planetary Transit",
+                                "Bullish": "Bullish",
+                                "Bearish": "Bearish"
+                            })
+            else:
+                st.info("No timing data available for BTC")
+        
+        # DOWJONES Tab
+        with asset_tabs[6]:
+            dowjones_timing = get_asset_intraday_timing(data, "DOWJONES")
+            if dowjones_timing:
+                timing_df = pd.DataFrame(dowjones_timing)
+                timing_df['Bullish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bullish" else "No")
+                timing_df['Bearish'] = timing_df['sentiment'].apply(lambda x: "Yes" if x == "Bearish" else "No")
+                st.dataframe(timing_df[['start', 'end', 'trigger', 'Bullish', 'Bearish']], 
+                            use_container_width=True,
+                            column_config={
+                                "start": "Start Time",
+                                "end": "End Time",
+                                "trigger": "Planetary Transit",
+                                "Bullish": "Bullish",
+                                "Bearish": "Bearish"
+                            })
+            else:
+                st.info("No timing data available for DOWJONES")
     
-    # Sectoral Outlook
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("🟢 Bullish Sectors")
-        if bullish_sectors:
-            st.dataframe(pd.DataFrame({
-                "Sector": list(bullish_sectors.keys()),
-                "Strength": ["✅" * min(v, 3) for v in bullish_sectors.values()]
-            }), use_container_width=True)
-        else:
-            st.info("No bullish sectors identified")
-    
-    with col2:
-        st.subheader("🔴 Bearish Sectors")
-        if bearish_sectors:
-            st.dataframe(pd.DataFrame({
-                "Sector": list(bearish_sectors.keys()),
-                "Strength": ["⚠️" * min(v, 3) for v in bearish_sectors.values()]
-            }), use_container_width=True)
-        else:
-            st.info("No bearish sectors identified")
-    
-    # Key Planetary Triggers
-    st.subheader("🌟 Key Planetary Triggers")
-    if not retrogrades.empty:
-        st.dataframe(
-            retrogrades[['Planet', 'Time', 'Zodiac', 'Nakshatra', 'Motion']].rename(columns={
-                'Planet': 'Planet',
-                'Time': 'Time (IST)',
-                'Zodiac': 'Zodiac',
-                'Nakshatra': 'Nakshatra',
-                'Motion': 'Motion'
-            }),
-            use_container_width=True
-        )
-    else:
-        st.info("No retrogrades during market hours")
-    
-    # Trading Strategy
-    st.subheader("📈 Trading Strategy")
-    strategy = []
-    if bearish_sectors:
-        strategy.append(f"🔴 Short: {', '.join(list(bearish_sectors.keys())[:2])}")
-    if bullish_sectors:
-        strategy.append(f"🟢 Long: {', '.join(list(bullish_sectors.keys())[:2])}")
-    
-    # Add asset recommendations
-    bullish_assets = [asset for asset, sentiment in assets.items() if sentiment == 'Bullish']
-    bearish_assets = [asset for asset, sentiment in assets.items() if sentiment == 'Bearish']
-    
-    if bullish_assets:
-        strategy.append(f"🟢 Buy: {', '.join(bullish_assets)}")
-    if bearish_assets:
-        strategy.append(f"🔴 Sell: {', '.join(bearish_assets)}")
-    
-    if strategy:
-        st.markdown(" - " + "\n - ".join(strategy))
-    else:
-        st.info("Neutral market expected")
+    # Tab 2: Sectorwise Bullish/Bearish
+    with tab2:
+        st.subheader("Sectorwise Stock Timing")
+        
+        # Create subtabs for each sector
+        sector_tabs = st.tabs(["PSUBANK", "POWER", "METAL", "FMCG", "AUTO", "PHARMA", "OIL AND GAS"])
+        
+        # PSUBANK Tab
+        with sector_tabs[0]:
+            sector_timing = get_sector_intraday_timing(data, "PSUBANK")
+            if sector_timing:
+                # Create dataframe for each stock in the sector
+                sector_data = []
+                for stock in SECTOR_STOCKS["PSUBANK"]:
+                    for segment in sector_timing:
+                        sector_data.append({
+                            "Time": f"{segment['start']} - {segment['end']}",
+                            "Stock": stock,
+                            "Planetary Transit": segment['trigger'],
+                            "Bullish": "Yes" if segment['sentiment'] == "Bullish" else "No",
+                            "Bearish": "Yes" if segment['sentiment'] == "Bearish" else "No"
+                        })
+                
+                st.dataframe(pd.DataFrame(sector_data), use_container_width=True)
+            else:
+                st.info("No timing data available for PSUBANK sector")
+        
+        # POWER Tab
+        with sector_tabs[1]:
+            sector_timing = get_sector_intraday_timing(data, "POWER")
+            if sector_timing:
+                # Create dataframe for each stock in the sector
+                sector_data = []
+                for stock in SECTOR_STOCKS["POWER"]:
+                    for segment in sector_timing:
+                        sector_data.append({
+                            "Time": f"{segment['start']} - {segment['end']}",
+                            "Stock": stock,
+                            "Planetary Transit": segment['trigger'],
+                            "Bullish": "Yes" if segment['sentiment'] == "Bullish" else "No",
+                            "Bearish": "Yes" if segment['sentiment'] == "Bearish" else "No"
+                        })
+                
+                st.dataframe(pd.DataFrame(sector_data), use_container_width=True)
+            else:
+                st.info("No timing data available for POWER sector")
+        
+        # METAL Tab
+        with sector_tabs[2]:
+            sector_timing = get_sector_intraday_timing(data, "METAL")
+            if sector_timing:
+                # Create dataframe for each stock in the sector
+                sector_data = []
+                for stock in SECTOR_STOCKS["METAL"]:
+                    for segment in sector_timing:
+                        sector_data.append({
+                            "Time": f"{segment['start']} - {segment['end']}",
+                            "Stock": stock,
+                            "Planetary Transit": segment['trigger'],
+                            "Bullish": "Yes" if segment['sentiment'] == "Bullish" else "No",
+                            "Bearish": "Yes" if segment['sentiment'] == "Bearish" else "No"
+                        })
+                
+                st.dataframe(pd.DataFrame(sector_data), use_container_width=True)
+            else:
+                st.info("No timing data available for METAL sector")
+        
+        # FMCG Tab
+        with sector_tabs[3]:
+            sector_timing = get_sector_intraday_timing(data, "FMCG")
+            if sector_timing:
+                # Create dataframe for each stock in the sector
+                sector_data = []
+                for stock in SECTOR_STOCKS["FMCG"]:
+                    for segment in sector_timing:
+                        sector_data.append({
+                            "Time": f"{segment['start']} - {segment['end']}",
+                            "Stock": stock,
+                            "Planetary Transit": segment['trigger'],
+                            "Bullish": "Yes" if segment['sentiment'] == "Bullish" else "No",
+                            "Bearish": "Yes" if segment['sentiment'] == "Bearish" else "No"
+                        })
+                
+                st.dataframe(pd.DataFrame(sector_data), use_container_width=True)
+            else:
+                st.info("No timing data available for FMCG sector")
+        
+        # AUTO Tab
+        with sector_tabs[4]:
+            sector_timing = get_sector_intraday_timing(data, "AUTO")
+            if sector_timing:
+                # Create dataframe for each stock in the sector
+                sector_data = []
+                for stock in SECTOR_STOCKS["AUTO"]:
+                    for segment in sector_timing:
+                        sector_data.append({
+                            "Time": f"{segment['start']} - {segment['end']}",
+                            "Stock": stock,
+                            "Planetary Transit": segment['trigger'],
+                            "Bullish": "Yes" if segment['sentiment'] == "Bullish" else "No",
+                            "Bearish": "Yes" if segment['sentiment'] == "Bearish" else "No"
+                        })
+                
+                st.dataframe(pd.DataFrame(sector_data), use_container_width=True)
+            else:
+                st.info("No timing data available for AUTO sector")
+        
+        # PHARMA Tab
+        with sector_tabs[5]:
+            sector_timing = get_sector_intraday_timing(data, "PHARMA")
+            if sector_timing:
+                # Create dataframe for each stock in the sector
+                sector_data = []
+                for stock in SECTOR_STOCKS["PHARMA"]:
+                    for segment in sector_timing:
+                        sector_data.append({
+                            "Time": f"{segment['start']} - {segment['end']}",
+                            "Stock": stock,
+                            "Planetary Transit": segment['trigger'],
+                            "Bullish": "Yes" if segment['sentiment'] == "Bullish" else "No",
+                            "Bearish": "Yes" if segment['sentiment'] == "Bearish" else "No"
+                        })
+                
+                st.dataframe(pd.DataFrame(sector_data), use_container_width=True)
+            else:
+                st.info("No timing data available for PHARMA sector")
+        
+        # OIL AND GAS Tab
+        with sector_tabs[6]:
+            sector_timing = get_sector_intraday_timing(data, "OIL AND GAS")
+            if sector_timing:
+                # Create dataframe for each stock in the sector
+                sector_data = []
+                for stock in SECTOR_STOCKS["OIL AND GAS"]:
+                    for segment in sector_timing:
+                        sector_data.append({
+                            "Time": f"{segment['start']} - {segment['end']}",
+                            "Stock": stock,
+                            "Planetary Transit": segment['trigger'],
+                            "Bullish": "Yes" if segment['sentiment'] == "Bullish" else "No",
+                            "Bearish": "Yes" if segment['sentiment'] == "Bearish" else "No"
+                        })
+                
+                st.dataframe(pd.DataFrame(sector_data), use_container_width=True)
+            else:
+                st.info("No timing data available for OIL AND GAS sector")
     
     # Telegram Notification
     if notify and st.button("Send Report to Telegram"):
@@ -1056,6 +1294,7 @@ else:
     
     Make sure there are no extra spaces or special characters in the column names.
     """)
+
 # === FOOTER ===
 st.markdown("---")
 st.caption(f"Data source: Astronomics AI Almanac | Report generated: {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')}")
