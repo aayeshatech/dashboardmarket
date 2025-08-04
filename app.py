@@ -286,11 +286,20 @@ def analyze_sentiment(data):
         'SILVER': 'Neutral'
     }
     
+    # Analyze indices
+    indices = {
+        'NIFTY': 'Neutral',
+        'BANKNIFTY': 'Neutral'
+    }
+    
     # Simple asset analysis based on planetary positions
     for _, row in market_data.iterrows():
         planet = row['Planet']
         zodiac = row['Zodiac']
         motion = row['Motion']
+        sign_lord = row['Sign Lord']
+        star_lord = row['Star Lord']
+        sub_lord = row['Sub Lord']
         
         # GOLD: Bullish with Venus in Taurus or Cancer, Bearish with Saturn in Scorpio
         if planet == 'Ve' and zodiac in ['Taurus', 'Cancer']:
@@ -321,8 +330,20 @@ def analyze_sentiment(data):
             assets['SILVER'] = 'Bullish'
         elif planet == 'Sa' and zodiac == 'Cancer':
             assets['SILVER'] = 'Bearish'
+        
+        # NIFTY: Bullish with Jupiter or Venus strong, Bearish with Saturn or Mars strong
+        if sign_lord in ['Ju', 'Ve'] or star_lord in ['Ju', 'Ve'] or sub_lord in ['Ju', 'Ve']:
+            indices['NIFTY'] = 'Bullish'
+        elif sign_lord in ['Sa', 'Ma'] or star_lord in ['Sa', 'Ma'] or sub_lord in ['Sa', 'Ma']:
+            indices['NIFTY'] = 'Bearish'
+        
+        # BANKNIFTY: Bullish with Jupiter or Venus, Bearish with Saturn or Mars
+        if sign_lord in ['Ju', 'Ve'] or star_lord in ['Ju', 'Ve'] or sub_lord in ['Ju', 'Ve']:
+            indices['BANKNIFTY'] = 'Bullish'
+        elif sign_lord in ['Sa', 'Ma'] or star_lord in ['Sa', 'Ma'] or sub_lord in ['Sa', 'Ma']:
+            indices['BANKNIFTY'] = 'Bearish'
     
-    return segments, retrogrades, assets
+    return segments, retrogrades, assets, indices
 # === SECTOR MAPPING ===
 def map_sectors(segments):
     sector_map = {
@@ -348,6 +369,175 @@ def map_sectors(segments):
                     bearish_sectors[sector] = bearish_sectors.get(sector, 0) + 1
     
     return bullish_sectors, bearish_sectors
+# === INTRADAY TIMING FUNCTIONS ===
+def get_asset_intraday_timing(data, asset, start_time="05:00", end_time="23:55"):
+    """Generate intraday timing for assets (5AM to 11:55PM)"""
+    if not data:
+        return []
+    
+    df = pd.DataFrame(data)
+    df['Time'] = pd.to_datetime(df['Time']).dt.time
+    
+    # Filter for the time range
+    start = pd.to_datetime(start_time).time()
+    end = pd.to_datetime(end_time).time()
+    asset_data = df[df['Time'].between(start, end)]
+    
+    # Sort by time
+    asset_data = asset_data.sort_values('Time')
+    
+    # Create segments
+    segments = []
+    prev_time = start
+    
+    for _, row in asset_data.iterrows():
+        segments.append({
+            'start': prev_time.strftime('%H:%M'),
+            'end': row['Time'].strftime('%H:%M'),
+            'sentiment': get_asset_sentiment(row, asset),
+            'trigger': f"{row['Planet']} in {row['Zodiac']}"
+        })
+        prev_time = row['Time']
+    
+    # Add final segment
+    if asset_data.empty:
+        segments.append({
+            'start': start.strftime('%H:%M'),
+            'end': end.strftime('%H:%M'),
+            'sentiment': 'Neutral',
+            'trigger': 'No events'
+        })
+    else:
+        segments.append({
+            'start': prev_time.strftime('%H:%M'),
+            'end': end.strftime('%H:%M'),
+            'sentiment': get_asset_sentiment(asset_data.iloc[-1], asset),
+            'trigger': f"{asset_data.iloc[-1]['Planet']} in {asset_data.iloc[-1]['Zodiac']}"
+        })
+    
+    return segments
+
+def get_index_intraday_timing(data, index, start_time="09:15", end_time="15:30"):
+    """Generate intraday timing for indices (9:15AM to 3:30PM)"""
+    if not data:
+        return []
+    
+    df = pd.DataFrame(data)
+    df['Time'] = pd.to_datetime(df['Time']).dt.time
+    
+    # Filter for market hours
+    start = pd.to_datetime(start_time).time()
+    end = pd.to_datetime(end_time).time()
+    market_data = df[df['Time'].between(start, end)]
+    
+    # Get moon events for segmentation
+    moon_events = market_data[market_data['Planet'] == 'Mo'].sort_values('Time')
+    
+    # Create segments
+    segments = []
+    prev_time = start
+    
+    for _, event in moon_events.iterrows():
+        segments.append({
+            'start': prev_time.strftime('%H:%M'),
+            'end': event['Time'].strftime('%H:%M'),
+            'sentiment': get_index_sentiment(event, index),
+            'trigger': f"Moon in {event['Zodiac']}"
+        })
+        prev_time = event['Time']
+    
+    # Add final segment
+    if moon_events.empty:
+        segments.append({
+            'start': start.strftime('%H:%M'),
+            'end': end.strftime('%H:%M'),
+            'sentiment': 'Neutral',
+            'trigger': 'No Moon events'
+        })
+    else:
+        segments.append({
+            'start': prev_time.strftime('%H:%M'),
+            'end': end.strftime('%H:%M'),
+            'sentiment': get_index_sentiment(moon_events.iloc[-1], index),
+            'trigger': f"Moon in {moon_events.iloc[-1]['Zodiac']}"
+        })
+    
+    return segments
+
+def get_asset_sentiment(row, asset):
+    """Determine sentiment for an asset based on planetary position"""
+    planet = row['Planet']
+    zodiac = row['Zodiac']
+    motion = row['Motion']
+    sign_lord = row['Sign Lord']
+    star_lord = row['Star Lord']
+    sub_lord = row['Sub Lord']
+    
+    if asset == 'GOLD':
+        if planet == 'Ve' and zodiac in ['Taurus', 'Cancer', 'Pisces']:
+            return 'Bullish'
+        elif planet == 'Sa' and zodiac in ['Scorpio', 'Taurus']:
+            return 'Bearish'
+        elif sign_lord == 'Ve' or star_lord == 'Ve' or sub_lord == 'Ve':
+            return 'Bullish'
+        elif sign_lord == 'Sa' or star_lord == 'Sa' or sub_lord == 'Sa':
+            return 'Bearish'
+    
+    elif asset == 'SILVER':
+        if planet == 'Ve' and zodiac in ['Taurus', 'Libra', 'Cancer']:
+            return 'Bullish'
+        elif planet == 'Sa' and zodiac in ['Cancer', 'Taurus']:
+            return 'Bearish'
+        elif sign_lord == 'Ve' or star_lord == 'Ve' or sub_lord == 'Ve':
+            return 'Bullish'
+        elif sign_lord == 'Sa' or star_lord == 'Sa' or sub_lord == 'Sa':
+            return 'Bearish'
+    
+    elif asset == 'BTC':
+        if planet == 'Me' and zodiac in ['Gemini', 'Aquarius', 'Virgo']:
+            return 'Bullish'
+        elif planet == 'Sa' and motion == 'R':
+            return 'Bearish'
+        elif sign_lord == 'Me' or star_lord == 'Me' or sub_lord == 'Me':
+            return 'Bullish'
+        elif sign_lord == 'Sa' or star_lord == 'Sa' or sub_lord == 'Sa':
+            return 'Bearish'
+    
+    elif asset == 'DOWJONES':
+        if planet == 'Ju' and zodiac in ['Pisces', 'Cancer', 'Sagittarius']:
+            return 'Bullish'
+        elif planet == 'Ma' and zodiac in ['Capricorn', 'Aries']:
+            return 'Bearish'
+        elif sign_lord == 'Ju' or star_lord == 'Ju' or sub_lord == 'Ju':
+            return 'Bullish'
+        elif sign_lord == 'Ma' or star_lord == 'Ma' or sub_lord == 'Ma':
+            return 'Bearish'
+    
+    elif asset == 'CRUDE':
+        if planet == 'Ma' and zodiac in ['Aries', 'Scorpio']:
+            return 'Bullish'
+        elif planet == 'Sa' and zodiac == 'Taurus':
+            return 'Bearish'
+        elif sign_lord == 'Ma' or star_lord == 'Ma' or sub_lord == 'Ma':
+            return 'Bullish'
+        elif sign_lord == 'Sa' or star_lord == 'Sa' or sub_lord == 'Sa':
+            return 'Bearish'
+    
+    return 'Neutral'
+
+def get_index_sentiment(row, index):
+    """Determine sentiment for an index based on planetary position"""
+    sign_lord = row['Sign Lord']
+    star_lord = row['Star Lord']
+    sub_lord = row['Sub Lord']
+    
+    if index in ['NIFTY', 'BANKNIFTY']:
+        if sign_lord in ['Ju', 'Ve'] or star_lord in ['Ju', 'Ve'] or sub_lord in ['Ju', 'Ve']:
+            return 'Bullish'
+        elif sign_lord in ['Sa', 'Ma'] or star_lord in ['Sa', 'Ma'] or sub_lord in ['Sa', 'Ma']:
+            return 'Bearish'
+    
+    return 'Neutral'
 # === TELEGRAM NOTIFICATION ===
 def send_telegram_notification(message):
     try:
@@ -503,7 +693,7 @@ if uploaded_file is None:
     with st.spinner("Fetching astronomical data..."):
         data = fetch_almanac_data(date_str)
 if data:
-    segments, retrogrades, assets = analyze_sentiment(data)
+    segments, retrogrades, assets, indices = analyze_sentiment(data)
     bullish_sectors, bearish_sectors = map_sectors(segments)
     
     # Market Sentiment Timeline
@@ -521,6 +711,72 @@ if data:
         })
     
     st.dataframe(pd.DataFrame(timeline_data), use_container_width=True)
+    
+    # Asset Intraday Timing (5AM to 11:55PM)
+    st.subheader("🌐 Asset Intraday Timing (5AM - 11:55PM)")
+    
+    # Create tabs for each asset
+    asset_tabs = st.tabs(["GOLD", "SILVER", "BTC", "DOWJONES", "CRUDE"])
+    
+    assets_list = ["GOLD", "SILVER", "BTC", "DOWJONES", "CRUDE"]
+    
+    for i, asset in enumerate(assets_list):
+        with asset_tabs[i]:
+            asset_timing = get_asset_intraday_timing(data, asset)
+            
+            if asset_timing:
+                # Create a DataFrame for better display
+                timing_df = pd.DataFrame(asset_timing)
+                
+                # Add sentiment emoji
+                timing_df['Sentiment'] = timing_df['sentiment'].apply(
+                    lambda x: "🐂 Bullish" if x == "Bullish" else "🐻 Bearish" if x == "Bearish" else "➖ Neutral"
+                )
+                
+                # Display the timing table
+                st.dataframe(timing_df[['start', 'end', 'Sentiment', 'trigger']], 
+                            use_container_width=True,
+                            column_config={
+                                "start": "Start Time",
+                                "end": "End Time",
+                                "Sentiment": "Sentiment",
+                                "trigger": "Planetary Trigger"
+                            })
+            else:
+                st.info(f"No timing data available for {asset}")
+    
+    # Index Intraday Timing (9:15AM to 3:30PM)
+    st.subheader("📈 Index Intraday Timing (9:15AM - 3:30PM)")
+    
+    # Create tabs for each index
+    index_tabs = st.tabs(["NIFTY", "BANKNIFTY"])
+    
+    indices_list = ["NIFTY", "BANKNIFTY"]
+    
+    for i, index in enumerate(indices_list):
+        with index_tabs[i]:
+            index_timing = get_index_intraday_timing(data, index)
+            
+            if index_timing:
+                # Create a DataFrame for better display
+                timing_df = pd.DataFrame(index_timing)
+                
+                # Add sentiment emoji
+                timing_df['Sentiment'] = timing_df['sentiment'].apply(
+                    lambda x: "🐂 Bullish" if x == "Bullish" else "🐻 Bearish" if x == "Bearish" else "➖ Neutral"
+                )
+                
+                # Display the timing table
+                st.dataframe(timing_df[['start', 'end', 'Sentiment', 'trigger']], 
+                            use_container_width=True,
+                            column_config={
+                                "start": "Start Time",
+                                "end": "End Time",
+                                "Sentiment": "Sentiment",
+                                "trigger": "Planetary Trigger"
+                            })
+            else:
+                st.info(f"No timing data available for {index}")
     
     # Sectoral Outlook
     col1, col2 = st.columns(2)
@@ -543,14 +799,6 @@ if data:
             }), use_container_width=True)
         else:
             st.info("No bearish sectors identified")
-    
-    # Asset Sentiment
-    st.subheader("🌐 Asset Sentiment")
-    asset_df = pd.DataFrame({
-        "Asset": list(assets.keys()),
-        "Sentiment": ["🐂 " + v if v == "Bullish" else "🐻 " + v if v == "Bearish" else "➖ " + v for v in assets.values()]
-    })
-    st.dataframe(asset_df, use_container_width=True)
     
     # Key Planetary Triggers
     st.subheader("🌟 Key Planetary Triggers")
@@ -607,6 +855,11 @@ if data:
         for asset, sentiment in assets.items():
             emoji = "🐂" if sentiment == "Bullish" else "🐻" if sentiment == "Bearish" else "➖"
             message += f"\n<b>{asset}:</b> {emoji} {sentiment}"
+        
+        message += f"\n\n<b>Index Sentiment:</b>"
+        for index, sentiment in indices.items():
+            emoji = "🐂" if sentiment == "Bullish" else "🐻" if sentiment == "Bearish" else "➖"
+            message += f"\n<b>{index}:</b> {emoji} {sentiment}"
         
         message += f"\n\n<b>Key Events:</b> {f"{len(retrogrades)} retrogrades" if not retrogrades.empty else "None"}"
         
