@@ -227,7 +227,7 @@ def fetch_almanac_data(date):
 # === SENTIMENT ANALYSIS ===
 def analyze_sentiment(data):
     if not data:
-        return [], pd.DataFrame()
+        return [], pd.DataFrame(), {}
         
     df = pd.DataFrame(data)
     df['Time'] = pd.to_datetime(df['Time']).dt.time
@@ -277,7 +277,52 @@ def analyze_sentiment(data):
             'zodiac': moon_events.iloc[-1]['Zodiac']
         })
     
-    return segments, retrogrades
+    # Analyze assets
+    assets = {
+        'GOLD': 'Neutral',
+        'BTC': 'Neutral',
+        'DOWJONES': 'Neutral',
+        'CRUDE': 'Neutral',
+        'SILVER': 'Neutral'
+    }
+    
+    # Simple asset analysis based on planetary positions
+    for _, row in market_data.iterrows():
+        planet = row['Planet']
+        zodiac = row['Zodiac']
+        motion = row['Motion']
+        
+        # GOLD: Bullish with Venus in Taurus or Cancer, Bearish with Saturn in Scorpio
+        if planet == 'Ve' and zodiac in ['Taurus', 'Cancer']:
+            assets['GOLD'] = 'Bullish'
+        elif planet == 'Sa' and zodiac == 'Scorpio':
+            assets['GOLD'] = 'Bearish'
+        
+        # BTC: Bullish with Mercury in Gemini or Aquarius, Bearish with Saturn in aspect
+        if planet == 'Me' and zodiac in ['Gemini', 'Aquarius']:
+            assets['BTC'] = 'Bullish'
+        elif planet == 'Sa' and motion == 'R':
+            assets['BTC'] = 'Bearish'
+        
+        # DOWJONES: Bullish with Jupiter in Pisces or Cancer, Bearish with Mars in Capricorn
+        if planet == 'Ju' and zodiac in ['Pisces', 'Cancer']:
+            assets['DOWJONES'] = 'Bullish'
+        elif planet == 'Ma' and zodiac == 'Capricorn':
+            assets['DOWJONES'] = 'Bearish'
+        
+        # CRUDE: Bullish with Mars in Aries or Scorpio, Bearish with Saturn in Taurus
+        if planet == 'Ma' and zodiac in ['Aries', 'Scorpio']:
+            assets['CRUDE'] = 'Bullish'
+        elif planet == 'Sa' and zodiac == 'Taurus':
+            assets['CRUDE'] = 'Bearish'
+        
+        # SILVER: Bullish with Moon in Cancer or Venus in Libra, Bearish with Saturn in Cancer
+        if (planet == 'Mo' and zodiac == 'Cancer') or (planet == 'Ve' and zodiac == 'Libra'):
+            assets['SILVER'] = 'Bullish'
+        elif planet == 'Sa' and zodiac == 'Cancer':
+            assets['SILVER'] = 'Bearish'
+    
+    return segments, retrogrades, assets
 # === SECTOR MAPPING ===
 def map_sectors(segments):
     sector_map = {
@@ -458,7 +503,7 @@ if uploaded_file is None:
     with st.spinner("Fetching astronomical data..."):
         data = fetch_almanac_data(date_str)
 if data:
-    segments, retrogrades = analyze_sentiment(data)
+    segments, retrogrades, assets = analyze_sentiment(data)
     bullish_sectors, bearish_sectors = map_sectors(segments)
     
     # Market Sentiment Timeline
@@ -499,6 +544,14 @@ if data:
         else:
             st.info("No bearish sectors identified")
     
+    # Asset Sentiment
+    st.subheader("🌐 Asset Sentiment")
+    asset_df = pd.DataFrame({
+        "Asset": list(assets.keys()),
+        "Sentiment": ["🐂 " + v if v == "Bullish" else "🐻 " + v if v == "Bearish" else "➖ " + v for v in assets.values()]
+    })
+    st.dataframe(asset_df, use_container_width=True)
+    
     # Key Planetary Triggers
     st.subheader("🌟 Key Planetary Triggers")
     if not retrogrades.empty:
@@ -523,6 +576,15 @@ if data:
     if bullish_sectors:
         strategy.append(f"🟢 Long: {', '.join(list(bullish_sectors.keys())[:2])}")
     
+    # Add asset recommendations
+    bullish_assets = [asset for asset, sentiment in assets.items() if sentiment == 'Bullish']
+    bearish_assets = [asset for asset, sentiment in assets.items() if sentiment == 'Bearish']
+    
+    if bullish_assets:
+        strategy.append(f"🟢 Buy: {', '.join(bullish_assets)}")
+    if bearish_assets:
+        strategy.append(f"🔴 Sell: {', '.join(bearish_assets)}")
+    
     if strategy:
         st.markdown(" - " + "\n - ".join(strategy))
     else:
@@ -540,8 +602,14 @@ if data:
         <b>Top Bullish:</b> {', '.join(list(bullish_sectors.keys())[:2]) if bullish_sectors else 'None'}
         <b>Top Bearish:</b> {', '.join(list(bearish_sectors.keys())[:2]) if bearish_sectors else 'None'}
         
-        <b>Key Events:</b> {f"{len(retrogrades)} retrogrades" if not retrogrades.empty else "None"}
+        <b>Asset Sentiment:</b>
         """
+        for asset, sentiment in assets.items():
+            emoji = "🐂" if sentiment == "Bullish" else "🐻" if sentiment == "Bearish" else "➖"
+            message += f"\n<b>{asset}:</b> {emoji} {sentiment}"
+        
+        message += f"\n\n<b>Key Events:</b> {f"{len(retrogrades)} retrogrades" if not retrogrades.empty else "None"}"
+        
         send_telegram_notification(message)
         st.success("Report sent to Telegram!")
     
