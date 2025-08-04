@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import pytz
 import json
 import re
-from bs4 import BeautifulSoup
 
 # === CONFIGURATION ===
 BOT_TOKEN = '7613703350:AAE-W4dJ37lngM4lO2Tnuns8-a-80jYRtxk'
@@ -200,16 +199,15 @@ def fetch_almanac_data(date):
         st.write(f"**Debug Info:**")
         st.write(f"URL: {url}")
         st.write(f"Status Code: {response.status_code}")
-        st.write(f"Response Headers: {response.headers}")
         
-        # Parse HTML to extract iframe src
-        soup = BeautifulSoup(response.text, 'html.parser')
-        iframe = soup.find('iframe', id='almanacFrame')
+        # Use regex to extract iframe src
+        iframe_pattern = r'<iframe[^>]*id="almanacFrame"[^>]*src="([^"]*)"'
+        match = re.search(iframe_pattern, response.text)
         
-        if not iframe:
+        if not match:
             raise ValueError("Could not find iframe in the HTML response")
             
-        iframe_src = iframe.get('src')
+        iframe_src = match.group(1)
         st.write(f"Iframe SRC: {iframe_src}")
         
         # Now get the actual data from the iframe src
