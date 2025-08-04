@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import pytz
 import json
 import re
+import io
 
 # === CONFIGURATION ===
 BOT_TOKEN = '7613703350:AAE-W4dJ37lngM4lO2Tnuns8-a-80jYRtxk'
@@ -188,81 +189,48 @@ EXAMPLE_DATA = [
 @st.cache_data(ttl=3600)
 def fetch_almanac_data(date):
     try:
-        # First, get the HTML page
-        url = f"https://data.astronomics.ai/almanac/?date={date}"
+        # Try direct approach with Google Apps Script URL
+        script_url = "https://script.google.com/macros/s/AKfycbydjof_o_vUV1AUU7m9_14egn07wYEyE4fow-nWoHncZrug2ySkrpeCUFOxlcacCtcFhg/exec"
+        params = {"date": date}
+        
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
         }
-        response = requests.get(url, headers=headers, timeout=15)
+        
+        response = requests.get(script_url, params=params, headers=headers, timeout=30)
         
         # Debug information
         with st.expander("Debug Information"):
-            st.write(f"**URL:** {url}")
+            st.write(f"**URL:** {response.url}")
             st.write(f"**Status Code:** {response.status_code}")
-            
-        # Use regex to extract iframe src
-        iframe_pattern = r'<iframe[^>]*id="almanacFrame"[^>]*src="([^"]*)"'
-        match = re.search(iframe_pattern, response.text)
-        
-        if not match:
-            raise ValueError("Could not find iframe in the HTML response")
-            
-        iframe_src = match.group(1)
-        with st.expander("Debug Information"):
-            st.write(f"**Iframe SRC:** {iframe_src}")
-        
-        # Now get the second HTML page from the iframe src
-        data_response = requests.get(iframe_src, headers=headers, timeout=15)
-        with st.expander("Debug Information"):
-            st.write(f"**Data URL Status:** {data_response.status_code}")
-            st.write(f"**Data Response (first 200 chars):** {data_response.text[:200]}")
+            st.write(f"**Response Headers:** {response.headers}")
+            st.write(f"**Response (first 500 chars):** {response.text[:500]}")
         
         # Check if response is empty
-        if not data_response.text.strip():
-            raise ValueError("Empty response from data URL")
+        if not response.text.strip():
+            raise ValueError("Empty response from API")
         
-        # Check if it's HTML (not JSON)
-        if data_response.text.strip().startswith('<'):
-            # Extract the sandboxFrame src
-            sandbox_pattern = r'<iframe[^>]*id="sandboxFrame"[^>]*src="([^"]*)"'
-            sandbox_match = re.search(sandbox_pattern, data_response.text)
+        # Try to parse JSON
+        try:
+            data = json.loads(response.text)
+            return data
+        except json.JSONDecodeError:
+            # If not JSON, try to extract JSON from HTML
+            json_pattern = r'(\[.*\])'
+            json_match = re.search(json_pattern, response.text, re.DOTALL)
             
-            if not sandbox_match:
-                raise ValueError("Could not find sandbox iframe in the HTML response")
-                
-            sandbox_src = sandbox_match.group(1)
-            with st.expander("Debug Information"):
-                st.write(f"**Sandbox SRC:** {sandbox_src}")
-            
-            # Now get the actual data from the sandbox iframe src
-            final_response = requests.get(sandbox_src, headers=headers, timeout=15)
-            with st.expander("Debug Information"):
-                st.write(f"**Final URL Status:** {final_response.status_code}")
-                st.write(f"**Final Response (first 200 chars):** {final_response.text[:200]}")
-            
-            # Check if response is empty
-            if not final_response.text.strip():
-                raise ValueError("Empty response from final URL")
-                
-            # Try to parse JSON
-            try:
-                data = json.loads(final_response.text)
-            except json.JSONDecodeError as e:
-                st.error(f"JSON Decode Error: {str(e)}")
-                with st.expander("Raw Response"):
-                    st.text(final_response.text)
-                raise
-        else:
-            # Try to parse JSON directly
-            try:
-                data = json.loads(data_response.text)
-            except json.JSONDecodeError as e:
-                st.error(f"JSON Decode Error: {str(e)}")
-                with st.expander("Raw Response"):
-                    st.text(data_response.text)
-                raise
-            
-        return data
+            if json_match:
+                try:
+                    data = json.loads(json_match.group(1))
+                    return data
+                except json.JSONDecodeError as e:
+                    st.error(f"JSON extraction failed: {str(e)}")
+                    raise ValueError("Could not extract JSON from response")
+            else:
+                raise ValueError("No JSON found in response")
+        
     except Exception as e:
         st.error(f"Data fetch failed: {str(e)}")
         
@@ -390,9 +358,28 @@ date_str = selected_date.strftime("%Y-%m-%d")
 # Display selected date
 st.markdown(f"### Selected Date: {selected_date.strftime('%d %B %Y')}")
 
-# Fetch and process data
-with st.spinner("Fetching astronomical data..."):
-    data = fetch_almanac_data(date_str)
+# Manual data upload option
+with st.expander("Manual Data Upload (if API fails)"):
+    st.write("Upload a JSON file with planetary data:")
+    uploaded_file = st.file_uploader("Choose a file", type="json")
+    
+    if uploaded_file is not None:
+        try:
+            # To read file as string:
+            string_data = uploaded_file.read().decode("utf-8")
+            manual_data = json.loads(string_data)
+            st.success("Data uploaded successfully!")
+            data = manual_data
+        except Exception as e:
+            st.error(f"Error processing uploaded file: {str(e)}")
+            data = None
+    else:
+        data = None
+
+# Fetch and process data if no manual upload
+if uploaded_file is None:
+    with st.spinner("Fetching astronomical data..."):
+        data = fetch_almanac_data(date_str)
 
 if data:
     segments, retrogrades = analyze_sentiment(data)
@@ -504,12 +491,23 @@ if data:
         st.warning("Tomorrow's data unavailable")
 
 else:
-    st.error("Failed to load data. Please try another date or check the debug information above.")
+    st.error("Failed to load data. Please try another date or upload data manually.")
     
     # Show example data if available
     if date_str == "2025-08-05":
         st.info("Showing example data for 2025-08-05")
         st.dataframe(pd.DataFrame(EXAMPLE_DATA), use_container_width=True)
+    
+    # Provide example data download
+    st.subheader("Download Example Data")
+    st.write("You can download this example data and modify it for your needs:")
+    example_json = json.dumps(EXAMPLE_DATA, indent=2)
+    st.download_button(
+        label="Download Example JSON",
+        data=example_json,
+        file_name="example_astro_data.json",
+        mime="application/json"
+    )
 
 # === FOOTER ===
 st.markdown("---")
