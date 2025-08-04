@@ -4,6 +4,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 import json
+import re
+from bs4 import BeautifulSoup
 
 # === CONFIGURATION ===
 BOT_TOKEN = '7613703350:AAE-W4dJ37lngM4lO2Tnuns8-a-80jYRtxk'
@@ -187,6 +189,7 @@ EXAMPLE_DATA = [
 @st.cache_data(ttl=3600)
 def fetch_almanac_data(date):
     try:
+        # First, get the HTML page
         url = f"https://data.astronomics.ai/almanac/?date={date}"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -198,18 +201,32 @@ def fetch_almanac_data(date):
         st.write(f"URL: {url}")
         st.write(f"Status Code: {response.status_code}")
         st.write(f"Response Headers: {response.headers}")
-        st.write(f"Response Content (first 200 chars): {response.text[:200]}")
+        
+        # Parse HTML to extract iframe src
+        soup = BeautifulSoup(response.text, 'html.parser')
+        iframe = soup.find('iframe', id='almanacFrame')
+        
+        if not iframe:
+            raise ValueError("Could not find iframe in the HTML response")
+            
+        iframe_src = iframe.get('src')
+        st.write(f"Iframe SRC: {iframe_src}")
+        
+        # Now get the actual data from the iframe src
+        data_response = requests.get(iframe_src, headers=headers, timeout=15)
+        st.write(f"Data URL Status: {data_response.status_code}")
+        st.write(f"Data Response (first 200 chars): {data_response.text[:200]}")
         
         # Check if response is empty
-        if not response.text.strip():
-            raise ValueError("Empty response from API")
+        if not data_response.text.strip():
+            raise ValueError("Empty response from data URL")
             
         # Try to parse JSON
         try:
-            data = response.json()
+            data = json.loads(data_response.text)
         except json.JSONDecodeError as e:
             st.error(f"JSON Decode Error: {str(e)}")
-            st.error(f"Raw Response: {response.text}")
+            st.error(f"Raw Response: {data_response.text}")
             raise
             
         return data
