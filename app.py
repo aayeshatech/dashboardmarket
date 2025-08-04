@@ -4,8 +4,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 import json
-import re
-import io
 
 # === CONFIGURATION ===
 BOT_TOKEN = '7613703350:AAE-W4dJ37lngM4lO2Tnuns8-a-80jYRtxk'
@@ -189,21 +187,19 @@ EXAMPLE_DATA = [
 @st.cache_data(ttl=3600)
 def fetch_almanac_data(date):
     try:
-        # Try direct approach with Google Apps Script URL
-        script_url = "https://script.google.com/macros/s/AKfycbydjof_o_vUV1AUU7m9_14egn07wYEyE4fow-nWoHncZrug2ySkrpeCUFOxlcacCtcFhg/exec"
-        params = {"date": date}
+        # Use the direct Google Apps Script URL
+        base_url = "https://script.google.com/macros/s/AKfycbydjof_o_vUV1AUU7m9_14egn07wYEyE4fow-nWoHncZrug2ySkrpeCUFOxlcacCtcFhg/exec"
+        url = f"{base_url}?date={date}"
         
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        response = requests.get(script_url, params=params, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30)
         
         # Debug information
         with st.expander("Debug Information"):
-            st.write(f"**URL:** {response.url}")
+            st.write(f"**URL:** {url}")
             st.write(f"**Status Code:** {response.status_code}")
             st.write(f"**Response Headers:** {response.headers}")
             st.write(f"**Response (first 500 chars):** {response.text[:500]}")
@@ -216,21 +212,12 @@ def fetch_almanac_data(date):
         try:
             data = json.loads(response.text)
             return data
-        except json.JSONDecodeError:
-            # If not JSON, try to extract JSON from HTML
-            json_pattern = r'(\[.*\])'
-            json_match = re.search(json_pattern, response.text, re.DOTALL)
+        except json.JSONDecodeError as e:
+            st.error(f"JSON Decode Error: {str(e)}")
+            with st.expander("Raw Response"):
+                st.text(response.text)
+            raise
             
-            if json_match:
-                try:
-                    data = json.loads(json_match.group(1))
-                    return data
-                except json.JSONDecodeError as e:
-                    st.error(f"JSON extraction failed: {str(e)}")
-                    raise ValueError("Could not extract JSON from response")
-            else:
-                raise ValueError("No JSON found in response")
-        
     except Exception as e:
         st.error(f"Data fetch failed: {str(e)}")
         
