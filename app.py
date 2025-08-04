@@ -227,7 +227,7 @@ def fetch_almanac_data(date):
 # === SENTIMENT ANALYSIS ===
 def analyze_sentiment(data):
     if not data:
-        return [], pd.DataFrame(), {}
+        return [], pd.DataFrame(), {}, {}
         
     df = pd.DataFrame(data)
     df['Time'] = pd.to_datetime(df['Time']).dt.time
@@ -538,6 +538,74 @@ def get_index_sentiment(row, index):
             return 'Bearish'
     
     return 'Neutral'
+
+def generate_asset_report(data, date):
+    """Generate asset report in table format"""
+    assets = ['GOLD', 'BTC', 'SILVER', 'CRUDE', 'DOWJONES']
+    report_data = []
+    
+    for asset in assets:
+        timing = get_asset_intraday_timing(data, asset)
+        for segment in timing:
+            # Determine action based on sentiment
+            if segment['sentiment'] == 'Bullish':
+                action = 'Go Long'
+            elif segment['sentiment'] == 'Bearish':
+                action = 'Go Short'
+            else:
+                action = 'Hold'
+            
+            report_data.append({
+                'Date': date,
+                'Segment': asset,
+                'Bullish/Bearish': segment['sentiment'],
+                'Time Period': f"{segment['start']} - {segment['end']}",
+                'Remark': segment['trigger'],
+                'Go Long/Short': action
+            })
+    
+    return pd.DataFrame(report_data)
+
+def generate_index_sector_report(segments, indices, bullish_sectors, bearish_sectors, retrogrades):
+    """Generate index and sector report in the existing format"""
+    # Get the first timeline segment for market sentiment
+    if segments:
+        sentiment = "🐂 Bullish" if segments[0]['sub_lord'] in ['Ve', 'Ju'] else "🐻 Bearish"
+        time_period = f"{segments[0]['start'].strftime('%H:%M')} - {segments[0]['end'].strftime('%H:%M')}"
+    else:
+        sentiment = "➖ Neutral"
+        time_period = "N/A"
+    
+    # Get top bullish and bearish sectors
+    top_bullish = ', '.join(list(bullish_sectors.keys())[:2]) if bullish_sectors else 'None'
+    top_bearish = ', '.join(list(bearish_sectors.keys())[:2]) if bearish_sectors else 'None'
+    
+    # Create report
+    report = f"""
+        <b>{REMARK}</b>
+        <b>Date:</b> {date_str}
+        
+        <b>Market Sentiment:</b>
+        {sentiment} ({time_period})
+        
+        <b>Top Bullish:</b> {top_bullish}
+        <b>Top Bearish:</b> {top_bearish}
+        
+        <b>Asset Sentiment:</b>
+        """
+    
+    for asset, sentiment in assets.items():
+        emoji = "🐂" if sentiment == "Bullish" else "🐻" if sentiment == "Bearish" else "➖"
+        report += f"\n<b>{asset}:</b> {emoji} {sentiment}"
+    
+    report += f"\n\n<b>Index Sentiment:</b>"
+    for index, sentiment in indices.items():
+        emoji = "🐂" if sentiment == "Bullish" else "🐻" if sentiment == "Bearish" else "➖"
+        report += f"\n<b>{index}:</b> {emoji} {sentiment}"
+    
+    report += f"\n\n<b>Key Events:</b> {f"{len(retrogrades)} retrogrades" if not retrogrades.empty else "None"}"
+    
+    return report
 # === TELEGRAM NOTIFICATION ===
 def send_telegram_notification(message):
     try:
@@ -840,31 +908,24 @@ if data:
     
     # Telegram Notification
     if notify and st.button("Send Report to Telegram"):
-        message = f"""
-        <b>{REMARK}</b>
-        <b>Date:</b> {selected_date.strftime('%d %b %Y')}
+        # Generate asset report
+        asset_report_df = generate_asset_report(data, selected_date.strftime('%Y-%m-%d'))
         
-        <b>Market Sentiment:</b>
-        {timeline_data[0]['Sentiment']} ({timeline_data[0]['Time Period']})
+        # Convert asset report to string for Telegram
+        asset_report_str = "<b>ASSET REPORT</b>\n"
+        asset_report_str += "<pre>"
+        asset_report_str += asset_report_df.to_string(index=False)
+        asset_report_str += "</pre>"
         
-        <b>Top Bullish:</b> {', '.join(list(bullish_sectors.keys())[:2]) if bullish_sectors else 'None'}
-        <b>Top Bearish:</b> {', '.join(list(bearish_sectors.keys())[:2]) if bearish_sectors else 'None'}
+        # Generate index and sector report
+        index_sector_report = generate_index_sector_report(segments, indices, bullish_sectors, bearish_sectors, retrogrades)
         
-        <b>Asset Sentiment:</b>
-        """
-        for asset, sentiment in assets.items():
-            emoji = "🐂" if sentiment == "Bullish" else "🐻" if sentiment == "Bearish" else "➖"
-            message += f"\n<b>{asset}:</b> {emoji} {sentiment}"
+        # Combine both reports
+        combined_message = asset_report_str + "\n\n" + index_sector_report
         
-        message += f"\n\n<b>Index Sentiment:</b>"
-        for index, sentiment in indices.items():
-            emoji = "🐂" if sentiment == "Bullish" else "🐻" if sentiment == "Bearish" else "➖"
-            message += f"\n<b>{index}:</b> {emoji} {sentiment}"
-        
-        message += f"\n\n<b>Key Events:</b> {f"{len(retrogrades)} retrogrades" if not retrogrades.empty else "None"}"
-        
-        send_telegram_notification(message)
-        st.success("Report sent to Telegram!")
+        # Send to Telegram
+        send_telegram_notification(combined_message)
+        st.success("Reports sent to Telegram!")
     
     # Tomorrow's Preview
     st.subheader("🔮 Tomorrow's Preview")
