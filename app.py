@@ -195,13 +195,6 @@ def fetch_almanac_data(date):
         
         response = requests.get(url, headers=headers, timeout=30)
         
-        # Debug information
-        with st.expander("Debug Information"):
-            st.write(f"**URL:** {url}")
-            st.write(f"**Status Code:** {response.status_code}")
-            st.write(f"**Response Headers:** {response.headers}")
-            st.write(f"**Response (first 500 chars):** {response.text[:500]}")
-        
         # Check if response is empty
         if not response.text.strip():
             raise ValueError("Empty response from API")
@@ -566,7 +559,7 @@ def generate_asset_report(data, date):
     
     return pd.DataFrame(report_data)
 
-def generate_index_sector_report(segments, indices, bullish_sectors, bearish_sectors, retrogrades):
+def generate_index_sector_report(segments, indices, bullish_sectors, bearish_sectors, retrogrades, date_str):
     """Generate index and sector report in the existing format"""
     # Get the first timeline segment for market sentiment
     if segments:
@@ -623,6 +616,13 @@ def send_telegram_notification(message):
 # === STREAMLIT DASHBOARD ===
 st.set_page_config(page_title="Astro Market Dashboard", layout="wide")
 st.title("🌌 Daily Astro Market Dashboard")
+
+# Initialize session state for data
+if 'data' not in st.session_state:
+    st.session_state.data = None
+if 'uploaded_file' not in st.session_state:
+    st.session_state.uploaded_file = None
+
 # Date selector with validation
 col1, col2 = st.columns([2, 1])
 with col1:
@@ -634,10 +634,13 @@ with col1:
     )
 with col2:
     notify = st.checkbox("Send Telegram Notification")
+
 # Format date for API
 date_str = selected_date.strftime("%Y-%m-%d")
+
 # Display selected date
 st.markdown(f"### Selected Date: {selected_date.strftime('%d %B %Y')}")
+
 # Manual data upload option
 with st.expander("Daily Data Upload"):
     st.write("Upload a CSV, JSON, or TXT file with planetary data:")
@@ -645,7 +648,7 @@ with st.expander("Daily Data Upload"):
     # File upload option
     uploaded_file = st.file_uploader("Choose a file", type=["csv", "json", "txt"])
     
-    if uploaded_file is not None:
+    if uploaded_file is not None and uploaded_file != st.session_state.uploaded_file:
         try:
             # Process CSV file
             if uploaded_file.name.endswith('.csv'):
@@ -671,7 +674,7 @@ with st.expander("Daily Data Upload"):
                         except Exception as e:
                             st.error(f"Error reading CSV: {str(e)}")
                             st.info("Please make sure your CSV file has the correct format.")
-                            data = None
+                            st.session_state.data = None
                             raise
                 
                 # Check if required columns exist
@@ -682,16 +685,25 @@ with st.expander("Daily Data Upload"):
                 if missing_columns:
                     st.error(f"Missing required columns: {', '.join(missing_columns)}")
                     st.info("Please make sure your CSV file has all required columns.")
-                    data = None
+                    st.session_state.data = None
                 else:
-                    # Convert DataFrame to list of dictionaries
-                    manual_data = df.to_dict('records')
-                    st.success("CSV data uploaded successfully!")
-                    data = manual_data
+                    # Filter data by selected date
+                    df['Date'] = pd.to_datetime(df['Date']).dt.date
+                    filtered_df = df[df['Date'] == selected_date]
                     
-                    # Show preview of uploaded data
-                    st.subheader("Uploaded Data Preview")
-                    st.dataframe(df)
+                    if filtered_df.empty:
+                        st.warning(f"No data found for {selected_date} in the uploaded file.")
+                        st.session_state.data = None
+                    else:
+                        # Convert DataFrame to list of dictionaries
+                        manual_data = filtered_df.to_dict('records')
+                        st.success("CSV data uploaded successfully!")
+                        st.session_state.data = manual_data
+                        st.session_state.uploaded_file = uploaded_file
+                        
+                        # Show preview of uploaded data
+                        st.subheader("Uploaded Data Preview")
+                        st.dataframe(filtered_df)
             
             # Process JSON file
             elif uploaded_file.name.endswith('.json'):
@@ -704,15 +716,31 @@ with st.expander("Daily Data Upload"):
                 
                 try:
                     manual_data = json.loads(string_data)
-                    st.success("JSON data uploaded successfully!")
-                    data = manual_data
                     
-                    # Show preview of uploaded data
-                    st.subheader("Uploaded Data Preview")
-                    st.dataframe(pd.DataFrame(manual_data))
+                    # Convert to DataFrame for filtering
+                    df = pd.DataFrame(manual_data)
+                    
+                    # Filter data by selected date
+                    df['Date'] = pd.to_datetime(df['Date']).dt.date
+                    filtered_df = df[df['Date'] == selected_date]
+                    
+                    if filtered_df.empty:
+                        st.warning(f"No data found for {selected_date} in the uploaded file.")
+                        st.session_state.data = None
+                    else:
+                        # Convert back to list of dictionaries
+                        filtered_data = filtered_df.to_dict('records')
+                        st.success("JSON data uploaded successfully!")
+                        st.session_state.data = filtered_data
+                        st.session_state.uploaded_file = uploaded_file
+                        
+                        # Show preview of uploaded data
+                        st.subheader("Uploaded Data Preview")
+                        st.dataframe(filtered_df)
+                        
                 except json.JSONDecodeError as e:
                     st.error(f"Invalid JSON format: {str(e)}")
-                    data = None
+                    st.session_state.data = None
             
             # Process TXT file (tab-separated)
             elif uploaded_file.name.endswith('.txt'):
@@ -735,31 +763,46 @@ with st.expander("Daily Data Upload"):
                     if missing_columns:
                         st.error(f"Missing required columns: {', '.join(missing_columns)}")
                         st.info("Please make sure your TXT file has all required columns in tab-separated format.")
-                        data = None
+                        st.session_state.data = None
                     else:
-                        # Convert DataFrame to list of dictionaries
-                        manual_data = df.to_dict('records')
-                        st.success("TXT data uploaded successfully!")
-                        data = manual_data
+                        # Filter data by selected date
+                        df['Date'] = pd.to_datetime(df['Date']).dt.date
+                        filtered_df = df[df['Date'] == selected_date]
                         
-                        # Show preview of uploaded data
-                        st.subheader("Uploaded Data Preview")
-                        st.dataframe(df)
-                        
+                        if filtered_df.empty:
+                            st.warning(f"No data found for {selected_date} in the uploaded file.")
+                            st.session_state.data = None
+                        else:
+                            # Convert DataFrame to list of dictionaries
+                            manual_data = filtered_df.to_dict('records')
+                            st.success("TXT data uploaded successfully!")
+                            st.session_state.data = manual_data
+                            st.session_state.uploaded_file = uploaded_file
+                            
+                            # Show preview of uploaded data
+                            st.subheader("Uploaded Data Preview")
+                            st.dataframe(filtered_df)
+                            
                 except Exception as e:
                     st.error(f"Error reading TXT file: {str(e)}")
                     st.info("Please make sure your TXT file is tab-separated with the correct columns.")
-                    data = None
+                    st.session_state.data = None
                     
         except Exception as e:
             st.error(f"Error processing uploaded file: {str(e)}")
-            data = None
-    else:
-        data = None
+            st.session_state.data = None
+    elif uploaded_file is None:
+        st.session_state.uploaded_file = None
+        st.session_state.data = None
+
 # Fetch and process data if no manual upload
-if uploaded_file is None:
+if st.session_state.data is None:
     with st.spinner("Fetching astronomical data..."):
-        data = fetch_almanac_data(date_str)
+        st.session_state.data = fetch_almanac_data(date_str)
+
+# Use the data from session state
+data = st.session_state.data
+
 if data:
     segments, retrogrades, assets, indices = analyze_sentiment(data)
     bullish_sectors, bearish_sectors = map_sectors(segments)
@@ -918,7 +961,7 @@ if data:
         asset_report_str += "</pre>"
         
         # Generate index and sector report
-        index_sector_report = generate_index_sector_report(segments, indices, bullish_sectors, bearish_sectors, retrogrades)
+        index_sector_report = generate_index_sector_report(segments, indices, bullish_sectors, bearish_sectors, retrogrades, selected_date.strftime('%d %b %Y'))
         
         # Combine both reports
         combined_message = asset_report_str + "\n\n" + index_sector_report
