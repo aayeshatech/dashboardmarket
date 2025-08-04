@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 import json
+import io
 
 # === CONFIGURATION ===
 BOT_TOKEN = '7613703350:AAE-W4dJ37lngM4lO2Tnuns8-a-80jYRtxk'
@@ -346,17 +347,41 @@ date_str = selected_date.strftime("%Y-%m-%d")
 st.markdown(f"### Selected Date: {selected_date.strftime('%d %B %Y')}")
 
 # Manual data upload option
-with st.expander("Manual Data Upload (if API fails)"):
-    st.write("Upload a JSON file with planetary data:")
-    uploaded_file = st.file_uploader("Choose a file", type="json")
+with st.expander("Daily Data Upload"):
+    st.write("Upload a CSV or JSON file with planetary data:")
+    
+    # File upload option
+    uploaded_file = st.file_uploader("Choose a file", type=["csv", "json"])
     
     if uploaded_file is not None:
         try:
-            # To read file as string:
-            string_data = uploaded_file.read().decode("utf-8")
-            manual_data = json.loads(string_data)
-            st.success("Data uploaded successfully!")
-            data = manual_data
+            # Process CSV file
+            if uploaded_file.name.endswith('.csv'):
+                # Read CSV file
+                string_data = uploaded_file.read().decode("utf-8")
+                df = pd.read_csv(io.StringIO(string_data))
+                
+                # Convert DataFrame to list of dictionaries
+                manual_data = df.to_dict('records')
+                st.success("CSV data uploaded successfully!")
+                data = manual_data
+                
+                # Show preview of uploaded data
+                st.subheader("Uploaded Data Preview")
+                st.dataframe(df.head(10))
+                
+            # Process JSON file
+            elif uploaded_file.name.endswith('.json'):
+                # Read JSON file
+                string_data = uploaded_file.read().decode("utf-8")
+                manual_data = json.loads(string_data)
+                st.success("JSON data uploaded successfully!")
+                data = manual_data
+                
+                # Show preview of uploaded data
+                st.subheader("Uploaded Data Preview")
+                st.dataframe(pd.DataFrame(manual_data).head(10))
+                
         except Exception as e:
             st.error(f"Error processing uploaded file: {str(e)}")
             data = None
@@ -487,7 +512,18 @@ else:
     
     # Provide example data download
     st.subheader("Download Example Data")
-    st.write("You can download this example data and modify it for your needs:")
+    
+    # CSV format
+    example_df = pd.DataFrame(EXAMPLE_DATA)
+    csv = example_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download Example CSV",
+        data=csv,
+        file_name="example_astro_data.csv",
+        mime="text/csv"
+    )
+    
+    # JSON format
     example_json = json.dumps(EXAMPLE_DATA, indent=2)
     st.download_button(
         label="Download Example JSON",
