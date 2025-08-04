@@ -5,13 +5,11 @@ from datetime import datetime, timedelta
 import pytz
 import json
 import io
-
 # === CONFIGURATION ===
 BOT_TOKEN = '7613703350:AAE-W4dJ37lngM4lO2Tnuns8-a-80jYRtxk'
 CHAT_ID = '-1002840229810'
 REMARK = "Aayeshatech Astro Trend"
 WEBHOOK_URL = "https://tradingview-webhook-0h3k.onrender.com"
-
 # === EXAMPLE DATA (FALLBACK) ===
 EXAMPLE_DATA = [
     {
@@ -183,7 +181,6 @@ EXAMPLE_DATA = [
         "Declination": 0.82
     }
 ]
-
 # === DATA FETCHING ===
 @st.cache_data(ttl=3600)
 def fetch_almanac_data(date):
@@ -227,7 +224,6 @@ def fetch_almanac_data(date):
             st.warning("Using example data for 2025-08-05")
             return EXAMPLE_DATA
         return None
-
 # === SENTIMENT ANALYSIS ===
 def analyze_sentiment(data):
     if not data:
@@ -282,7 +278,6 @@ def analyze_sentiment(data):
         })
     
     return segments, retrogrades
-
 # === SECTOR MAPPING ===
 def map_sectors(segments):
     sector_map = {
@@ -308,7 +303,6 @@ def map_sectors(segments):
                     bearish_sectors[sector] = bearish_sectors.get(sector, 0) + 1
     
     return bullish_sectors, bearish_sectors
-
 # === TELEGRAM NOTIFICATION ===
 def send_telegram_notification(message):
     try:
@@ -323,11 +317,9 @@ def send_telegram_notification(message):
             st.error(f"Telegram notification failed: {response.text}")
     except Exception as e:
         st.error(f"Telegram notification failed: {str(e)}")
-
 # === STREAMLIT DASHBOARD ===
 st.set_page_config(page_title="Astro Market Dashboard", layout="wide")
 st.title("🌌 Daily Astro Market Dashboard")
-
 # Date selector with validation
 col1, col2 = st.columns([2, 1])
 with col1:
@@ -339,19 +331,16 @@ with col1:
     )
 with col2:
     notify = st.checkbox("Send Telegram Notification")
-
 # Format date for API
 date_str = selected_date.strftime("%Y-%m-%d")
-
 # Display selected date
 st.markdown(f"### Selected Date: {selected_date.strftime('%d %B %Y')}")
-
 # Manual data upload option
 with st.expander("Daily Data Upload"):
-    st.write("Upload a CSV or JSON file with planetary data:")
+    st.write("Upload a CSV, JSON, or TXT file with planetary data:")
     
     # File upload option
-    uploaded_file = st.file_uploader("Choose a file", type=["csv", "json"])
+    uploaded_file = st.file_uploader("Choose a file", type=["csv", "json", "txt"])
     
     if uploaded_file is not None:
         try:
@@ -421,18 +410,53 @@ with st.expander("Daily Data Upload"):
                 except json.JSONDecodeError as e:
                     st.error(f"Invalid JSON format: {str(e)}")
                     data = None
+            
+            # Process TXT file (tab-separated)
+            elif uploaded_file.name.endswith('.txt'):
+                # Read TXT file
+                string_data = uploaded_file.read().decode("utf-8")
+                
+                # Show raw data for debugging
+                with st.expander("Raw TXT Data"):
+                    st.text(string_data[:1000])
+                
+                try:
+                    # Try reading as tab-separated data
+                    df = pd.read_csv(io.StringIO(string_data), sep='\t')
+                    
+                    # Check if required columns exist
+                    required_columns = ['Planet', 'Date', 'Time', 'Motion', 'Sign Lord', 'Star Lord', 
+                                      'Sub Lord', 'Zodiac', 'Nakshatra', 'Pada', 'Pos in Zodiac', 'Declination']
+                    
+                    missing_columns = [col for col in required_columns if col not in df.columns]
+                    if missing_columns:
+                        st.error(f"Missing required columns: {', '.join(missing_columns)}")
+                        st.info("Please make sure your TXT file has all required columns in tab-separated format.")
+                        data = None
+                    else:
+                        # Convert DataFrame to list of dictionaries
+                        manual_data = df.to_dict('records')
+                        st.success("TXT data uploaded successfully!")
+                        data = manual_data
+                        
+                        # Show preview of uploaded data
+                        st.subheader("Uploaded Data Preview")
+                        st.dataframe(df)
+                        
+                except Exception as e:
+                    st.error(f"Error reading TXT file: {str(e)}")
+                    st.info("Please make sure your TXT file is tab-separated with the correct columns.")
+                    data = None
                     
         except Exception as e:
             st.error(f"Error processing uploaded file: {str(e)}")
             data = None
     else:
         data = None
-
 # Fetch and process data if no manual upload
 if uploaded_file is None:
     with st.spinner("Fetching astronomical data..."):
         data = fetch_almanac_data(date_str)
-
 if data:
     segments, retrogrades = analyze_sentiment(data)
     bullish_sectors, bearish_sectors = map_sectors(segments)
@@ -541,7 +565,6 @@ if data:
             st.info("No Moon events tomorrow")
     else:
         st.warning("Tomorrow's data unavailable")
-
 else:
     st.error("Failed to load data. Please try another date or upload data manually.")
     
@@ -572,10 +595,19 @@ else:
         mime="application/json"
     )
     
-    # Instructions for CSV format
-    st.subheader("CSV Format Instructions")
+    # TXT format (tab-separated)
+    txt_data = example_df.to_csv(sep='\t', index=False).encode('utf-8')
+    st.download_button(
+        label="Download Example TXT",
+        data=txt_data,
+        file_name="example_astro_data.txt",
+        mime="text/plain"
+    )
+    
+    # Instructions for TXT format
+    st.subheader("TXT Format Instructions")
     st.markdown("""
-    Your CSV file should have these columns in this exact order:
+    Your TXT file should be tab-separated with these columns in this exact order:
     
     1. Planet (Su, Mo, Me, Ma, Ju, Ve, Sa, Ra, Ke)
     2. Date (YYYY-MM-DD)
@@ -590,9 +622,15 @@ else:
     11. Pos in Zodiac (degrees°minutes'seconds")
     12. Declination (decimal number)
     
+    Example:
+    ```
+    Planet	Date	Time	Motion	Sign Lord	Star Lord	Sub Lord	Zodiac	Nakshatra	Pada	Pos in Zodiac	Declination
+    Mo	2025-08-06	01:47:55	D	Ju	Ke	Ju	Saggitarius	Mula	3	07°33'20"	-28.48
+    Ke	2025-08-06	02:31:18	D	Su	Ve	Me	Leo	Purvaphalguni	4	25°53'19"	3.96
+    ```
+    
     Make sure there are no extra spaces or special characters in the column names.
     """)
-
 # === FOOTER ===
 st.markdown("---")
 st.caption(f"Data source: Astronomics AI Almanac | Report generated: {datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')}")
